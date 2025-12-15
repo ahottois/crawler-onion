@@ -1,6 +1,6 @@
 """
-Module de gestion de la base de données SQLite.
-Fournit un accès thread-safe aux données crawlées.
+Module de gestion de la base de donnees SQLite.
+Fournit un acces thread-safe aux donnees crawlees.
 """
 
 import sqlite3
@@ -14,7 +14,7 @@ from .logger import Log
 
 
 class DatabaseManager:
-    """Gestionnaire de base de données SQLite thread-safe."""
+    """Gestionnaire de base de donnees SQLite thread-safe."""
     
     def __init__(self, db_file: str):
         self.db_file = db_file
@@ -38,9 +38,9 @@ class DatabaseManager:
         return {row[1] for row in cursor.fetchall()}
     
     def _init_db(self):
-        """Initialise le schéma de la base de données avec migration automatique."""
+        """Initialise le schema de la base de donnees avec migration automatique."""
         with self._get_connection() as conn:
-            # Créer la table si elle n'existe pas
+            # Creer la table si elle n'existe pas
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS intel (
                     url TEXT PRIMARY KEY,
@@ -71,11 +71,11 @@ class DatabaseManager:
                 if column_name not in existing_columns:
                     try:
                         conn.execute(f'ALTER TABLE intel ADD COLUMN {column_name} {column_type}')
-                        Log.info(f"Migration: colonne '{column_name}' ajoutée")
+                        Log.info(f"Migration: colonne '{column_name}' ajoutee")
                     except sqlite3.OperationalError:
                         pass
             
-            # Mettre à jour les domaines manquants
+            # Mettre a jour les domaines manquants
             conn.execute('''
                 UPDATE intel 
                 SET domain = SUBSTR(
@@ -90,7 +90,7 @@ class DatabaseManager:
                 WHERE domain IS NULL OR domain = ''
             ''')
             
-            # Index pour accélérer les requêtes
+            # Index pour accelerer les requetes
             try:
                 conn.execute('CREATE INDEX IF NOT EXISTS idx_domain ON intel(domain)')
             except sqlite3.OperationalError:
@@ -101,7 +101,7 @@ class DatabaseManager:
                 pass
     
     def save(self, data: Dict[str, Any]):
-        """Sauvegarde les données d'une page crawlée."""
+        """Sauvegarde les donnees d'une page crawlee."""
         parsed = urlparse(data['url'])
         domain = parsed.netloc
         
@@ -129,7 +129,7 @@ class DatabaseManager:
             ))
     
     def get_visited_urls(self) -> Set[str]:
-        """Retourne l'ensemble des URLs déjà visitées."""
+        """Retourne l'ensemble des URLs deja visitees."""
         with self._get_connection() as conn:
             cursor = conn.execute("SELECT url FROM intel")
             return {row[0] for row in cursor.fetchall()}
@@ -148,7 +148,7 @@ class DatabaseManager:
             return {'total': row[0], 'success': row[1], 'domains': row[2]}
     
     def export_json(self, filepath: str) -> int:
-        """Exporte les résultats intéressants en JSON."""
+        """Exporte les resultats interessants en JSON."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("SELECT * FROM intel WHERE status = 200")
@@ -186,7 +186,7 @@ class DatabaseManager:
             return cursor.fetchall()
     
     def get_successful_urls_for_recrawl(self, min_depth: int = 0) -> List[str]:
-        """Retourne les URLs réussies pour extraire de nouveaux liens."""
+        """Retourne les URLs reussies pour extraire de nouveaux liens."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT url FROM intel 

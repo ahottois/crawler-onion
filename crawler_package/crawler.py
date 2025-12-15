@@ -44,7 +44,7 @@ class OnionCrawler:
         self.web_server: Optional[CrawlerWebServer] = None
     
     def _create_session(self) -> requests.Session:
-        """Crée une nouvelle session HTTP avec configuration Tor."""
+        """Cree une nouvelle session HTTP avec configuration Tor."""
         session = requests.Session()
         session.proxies = self.config.proxies
         session.headers.update({
@@ -60,7 +60,7 @@ class OnionCrawler:
         return session
     
     def _is_valid_onion_url(self, url: str) -> bool:
-        """Vérifie si l'URL est une URL .onion valide."""
+        """Verifie si l'URL est une URL .onion valide."""
         try:
             parsed = urlparse(url)
             if '.onion' not in parsed.netloc:
@@ -99,7 +99,7 @@ class OnionCrawler:
         return links
     
     def _worker(self):
-        """Worker de crawling exécuté dans un thread."""
+        """Worker de crawling execute dans un thread."""
         session = self._create_session()
         request_count = 0
         
@@ -219,7 +219,7 @@ class OnionCrawler:
         })
     
     def _verify_tor(self) -> bool:
-        """Vérifie la connexion Tor."""
+        """Verifie la connexion Tor."""
         Log.info(f"Test connexion Tor (Port {self.config.tor_socks_port})...")
         
         tor_ip = TorController.check_tor_connection(self.config.proxies)
@@ -227,7 +227,7 @@ class OnionCrawler:
             Log.success(f"Tor OK. IP: {tor_ip}")
             return True
         
-        Log.warn(f"Échec port {self.config.tor_socks_port}. Test port {self.config.tor_fallback_port}...")
+        Log.warn(f"Echec port {self.config.tor_socks_port}. Test port {self.config.tor_fallback_port}...")
         self.config.tor_socks_port = self.config.tor_fallback_port
         
         tor_ip = TorController.check_tor_connection(self.config.proxies)
@@ -240,9 +240,9 @@ class OnionCrawler:
     
     def run(self):
         """Lance le crawler."""
-        Log.info(f"Démarrage Darknet Crawler v{self.VERSION}")
+        Log.info(f"Demarrage Darknet Crawler v{self.VERSION}")
         
-        # Démarrer le serveur web
+        # Demarrer le serveur web
         if self.config.web_enabled:
             self.web_server = CrawlerWebServer(
                 self.config.db_file, 
@@ -251,15 +251,15 @@ class OnionCrawler:
             )
             self.web_server.start()
         
-        # Vérifier Tor
+        # Verifier Tor
         if not self._verify_tor():
             return
         
-        # Charger les URLs visitées
+        # Charger les URLs visitees
         self.visited = self.db.get_visited_urls()
         initial_count = len(self.visited)
         if initial_count > 0:
-            Log.info(f"Reprise: {initial_count} URLs déjà en base")
+            Log.info(f"Reprise: {initial_count} URLs deja en base")
         
         # Injecter les seeds
         seeds_added = 0
@@ -283,7 +283,7 @@ class OnionCrawler:
         
         # Rechercher de nouveaux liens
         if self.queue.empty():
-            Log.info("Recherche de nouveaux liens depuis les pages crawlées...")
+            Log.info("Recherche de nouveaux liens depuis les pages crawlees...")
             successful_urls = self.db.get_successful_urls_for_recrawl()
             session = self._create_session()
             new_links_found = 0
@@ -307,11 +307,11 @@ class OnionCrawler:
             
             session.close()
             if new_links_found > 0:
-                Log.info(f"Découvert {new_links_found} nouveaux liens")
+                Log.info(f"Decouvert {new_links_found} nouveaux liens")
         
-        # Vérifier si la queue est vide
+        # Verifier si la queue est vide
         if self.queue.empty():
-            Log.warn("Aucune URL à crawler. Ajoutez de nouveaux seeds.")
+            Log.warn("Aucune URL a crawler. Ajoutez de nouveaux seeds.")
             if self.web_server:
                 Log.info(f"Dashboard: http://0.0.0.0:{self.config.web_port}")
                 try:
@@ -321,8 +321,8 @@ class OnionCrawler:
                     pass
             return
         
-        Log.info(f"Queue initialisée avec {self.queue.qsize()} URLs")
-        Log.info(f"Démarrage de {self.config.max_workers} workers...")
+        Log.info(f"Queue initialisee avec {self.queue.qsize()} URLs")
+        Log.info(f"Demarrage de {self.config.max_workers} workers...")
         
         # Lancer les workers
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
@@ -343,18 +343,18 @@ class OnionCrawler:
         
         # Finalisation
         print()
-        Log.info("Export des résultats...")
+        Log.info("Export des resultats...")
         count = self.db.export_json(self.config.json_file)
         
         db_stats = self.db.get_stats()
         Log.info("=" * 50)
-        Log.info(f"URLs crawlées: {db_stats['total']}")
-        Log.info(f"Succès: {db_stats['success']}")
+        Log.info(f"URLs crawlees: {db_stats['total']}")
+        Log.info(f"Succes: {db_stats['success']}")
         Log.info(f"Domaines: {db_stats['domains']}")
         Log.info(f"Intel: {count}")
         
         if count > 0:
-            Log.success(f"Résultats: {self.config.json_file}")
+            Log.success(f"Resultats: {self.config.json_file}")
         
         if self.web_server:
             self.web_server.stop()

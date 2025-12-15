@@ -1,6 +1,6 @@
 """
-Module du serveur web intégré.
-Dashboard pour visualiser et contrôler le crawler.
+Module du serveur web integre.
+Dashboard pour visualiser et controler le crawler.
 """
 
 import json
@@ -17,7 +17,7 @@ from .logger import Log
 
 
 class CrawlerWebServer:
-    """Serveur web léger pour visualiser les résultats du crawler."""
+    """Serveur web leger pour visualiser les resultats du crawler."""
     
     def __init__(self, db_file: str, port: int, crawler_ref=None):
         self.db_file = db_file
@@ -28,7 +28,7 @@ class CrawlerWebServer:
         self._running = False
     
     def _get_data(self) -> Dict[str, Any]:
-        """Récupère les données depuis la base."""
+        """Recupere les donnees depuis la base."""
         data = {
             'total_urls': 0, 'success_urls': 0, 'domains': 0, 'intel_count': 0,
             'queue_size': 0, 'status': 'STOPPED', 'intel_rows': [], 'recent_rows': [],
@@ -87,7 +87,7 @@ class CrawlerWebServer:
         return data
     
     def _search(self, query: str, filter_type: str = 'all', limit: int = 50) -> List[Dict]:
-        """Recherche dans la base de données."""
+        """Recherche dans la base de donnees."""
         results = []
         try:
             conn = sqlite3.connect(self.db_file)
@@ -185,9 +185,9 @@ class CrawlerWebServer:
         return data
     
     def _add_seeds(self, urls: List[str]) -> Dict[str, Any]:
-        """Ajoute des URLs à la queue du crawler."""
+        """Ajoute des URLs a la queue du crawler."""
         if not self.crawler:
-            return {'success': False, 'message': 'Crawler non initialisé'}
+            return {'success': False, 'message': 'Crawler non initialise'}
         added, invalid = 0, 0
         for url in urls:
             url = url.strip()
@@ -201,15 +201,15 @@ class CrawlerWebServer:
                     self.crawler.queue.put((url, 0))
                     added += 1
         if added > 0:
-            return {'success': True, 'message': f'? {added} URL(s) ajoutée(s)' + (f' ({invalid} invalide(s))' if invalid else '')}
+            return {'success': True, 'message': f'{added} URL(s) ajoutee(s)' + (f' ({invalid} invalide(s))' if invalid else '')}
         elif invalid > 0:
-            return {'success': False, 'message': f'? {invalid} URL(s) invalide(s)'}
-        return {'success': False, 'message': '?? URLs déjà visitées'}
+            return {'success': False, 'message': f'{invalid} URL(s) invalide(s)'}
+        return {'success': False, 'message': 'URLs deja visitees'}
     
     def _refresh_links(self) -> Dict[str, Any]:
         """Force la recherche de nouveaux liens."""
         if not self.crawler:
-            return {'success': False, 'message': 'Crawler non initialisé'}
+            return {'success': False, 'message': 'Crawler non initialise'}
         try:
             conn = sqlite3.connect(self.db_file)
             c = conn.cursor()
@@ -218,12 +218,12 @@ class CrawlerWebServer:
             conn.close()
             if not urls: return {'success': False, 'message': 'Aucune page disponible'}
             for url in urls[:30]: self.crawler.queue.put((url, 0))
-            return {'success': True, 'message': f'?? {min(30, len(urls))} pages en queue'}
+            return {'success': True, 'message': f'{min(30, len(urls))} pages en queue'}
         except Exception as e:
             return {'success': False, 'message': f'Erreur: {str(e)}'}
     
     def _create_handler(self):
-        """Crée le handler HTTP."""
+        """Cree le handler HTTP."""
         server_instance = self
         
         class Handler(BaseHTTPRequestHandler):
@@ -280,7 +280,7 @@ class CrawlerWebServer:
         return Handler
     
     def start(self):
-        """Démarre le serveur web."""
+        """Demarre le serveur web."""
         if self._running: return
         try:
             self.server = HTTPServer(('0.0.0.0', self.port), self._create_handler())
@@ -288,30 +288,30 @@ class CrawlerWebServer:
             self._running = True
             self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
             self.thread.start()
-            Log.success(f"Serveur web démarré sur http://0.0.0.0:{self.port}")
+            Log.success(f"Serveur web demarre sur http://0.0.0.0:{self.port}")
         except Exception as e:
-            Log.error(f"Impossible de démarrer le serveur web: {e}")
+            Log.error(f"Impossible de demarrer le serveur web: {e}")
     
     def stop(self):
-        """Arrête le serveur web."""
+        """Arrete le serveur web."""
         if self.server and self._running:
             self.server.shutdown()
             self._running = False
-            Log.info("Serveur web arrêté")
+            Log.info("Serveur web arrete")
     
-    # Les templates sont dans un fichier séparé pour la lisibilité
+    # Les templates sont dans un fichier separe pour la lisibilite
     def _render_dashboard(self) -> str:
-        """Génère la page dashboard."""
+        """Genere la page dashboard."""
         from .web_templates import render_dashboard
         return render_dashboard(self._get_data(), self.port)
     
     def _render_search(self, query: str = '', filter_type: str = 'all') -> str:
-        """Génère la page de recherche."""
+        """Genere la page de recherche."""
         from .web_templates import render_search
         results = self._search(query, filter_type) if query or filter_type != 'all' else []
         return render_search(results, query, filter_type, self.port)
     
     def _render_trusted(self) -> str:
-        """Génère la page des sites fiables."""
+        """Genere la page des sites fiables."""
         from .web_templates import render_trusted
         return render_trusted(self._get_trusted_sites(), self.port)

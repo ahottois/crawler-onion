@@ -1,6 +1,6 @@
 """
-Module de contrôle Tor.
-Interface avec le contrôleur Tor et vérification de connexion.
+Module de controle Tor.
+Interface avec le controleur Tor et verification de connexion.
 """
 
 import socket
@@ -10,7 +10,7 @@ import requests
 
 
 class TorController:
-    """Interface avec le contrôleur Tor."""
+    """Interface avec le controleur Tor."""
     
     @staticmethod
     def request_new_circuit(control_port: int, password: str = "") -> bool:
@@ -18,11 +18,11 @@ class TorController:
         Demande un nouveau circuit Tor.
         
         Args:
-            control_port: Port du contrôleur Tor
+            control_port: Port du controleur Tor
             password: Mot de passe d'authentification (optionnel)
             
         Returns:
-            True si le nouveau circuit a été créé, False sinon
+            True si le nouveau circuit a ete cree, False sinon
         """
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -48,14 +48,14 @@ class TorController:
     @staticmethod
     def check_tor_connection(proxies: Dict[str, str], timeout: int = 20) -> Optional[str]:
         """
-        Vérifie la connexion Tor et retourne l'IP si connecté.
+        Verifie la connexion Tor et retourne l'IP si connecte.
         
         Args:
             proxies: Configuration proxy pour Tor
-            timeout: Timeout de la requête en secondes
+            timeout: Timeout de la requete en secondes
             
         Returns:
-            L'adresse IP Tor si connecté, None sinon
+            L'adresse IP Tor si connecte, None sinon
         """
         try:
             session = requests.Session()
@@ -81,7 +81,7 @@ class TorController:
         
         Args:
             proxies: Configuration proxy pour Tor
-            timeout: Timeout de la requête en secondes
+            timeout: Timeout de la requete en secondes
             
         Returns:
             Dictionnaire avec les informations de connexion

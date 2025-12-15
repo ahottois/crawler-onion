@@ -1,6 +1,6 @@
 """
 Module d'analyse de contenu des pages web.
-Extrait secrets, cryptos, emails, IPs et autres données sensibles.
+Extrait secrets, cryptos, emails, IPs et autres donnees sensibles.
 """
 
 import re
@@ -31,7 +31,7 @@ class ContentAnalyzer:
         'LTC': re.compile(r'\b[LM][a-km-zA-HJ-NP-Z1-9]{26,33}\b'),
     }
     
-    # Patterns pour réseaux sociaux/messagerie
+    # Patterns pour reseaux sociaux/messagerie
     PATTERNS_SOCIAL = {
         'Telegram': re.compile(r'(?:https?://)?(?:t\.me|telegram\.me)/([a-zA-Z0-9_]{5,})'),
         'Discord': re.compile(r'(?:https?://)?(?:discord\.gg|discordapp\.com/invite)/([a-zA-Z0-9]+)'),
@@ -44,7 +44,7 @@ class ContentAnalyzer:
     PATTERN_IPV4 = re.compile(r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b')
     PATTERN_EMAIL = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
     
-    # IPs privées à ignorer
+    # IPs privees a ignorer
     PRIVATE_IP_PREFIXES = (
         '127.', '0.', '10.', '192.168.', 
         '172.16.', '172.17.', '172.18.', '172.19.', 
@@ -70,7 +70,7 @@ class ContentAnalyzer:
             if header in headers:
                 stack.append(formatter(headers[header]))
         
-        # Détection via cookies
+        # Detection via cookies
         cookies = headers.get('Set-Cookie', '')
         cookie_indicators = {
             'PHPSESSID': 'PHP', 
@@ -151,7 +151,7 @@ class ContentAnalyzer:
     
     @classmethod
     def _extract_json_data(cls, soup: BeautifulSoup) -> List[str]:
-        """Extrait les données JSON embarquées dans la page."""
+        """Extrait les donnees JSON embarquees dans la page."""
         json_data = []
         try:
             for script in soup.find_all('script', type='application/json'):
@@ -166,15 +166,15 @@ class ContentAnalyzer:
     @classmethod
     def analyze(cls, text: str, soup: BeautifulSoup, headers: Dict[str, str]) -> Dict[str, Any]:
         """
-        Analyse complète d'une page.
+        Analyse complete d'une page.
         
         Args:
             text: Texte brut de la page
             soup: Objet BeautifulSoup de la page
-            headers: Headers HTTP de la réponse
+            headers: Headers HTTP de la reponse
             
         Returns:
-            Dictionnaire contenant toutes les données extraites
+            Dictionnaire contenant toutes les donnees extraites
         """
         return {
             'secrets': cls._extract_secrets(text),

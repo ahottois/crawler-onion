@@ -37,7 +37,7 @@ class Logger:
     
     @classmethod
     def _log(cls, level: LogLevel, msg: str, to_stderr: bool = False):
-        """Méthode interne de log."""
+        """Methode interne de log."""
         tag, color = level.value
         with cls._lock:
             output = f"{color}[{tag}]{Style.RESET_ALL} {msg}" if HAS_COLOR else f"[{tag}] {msg}"
@@ -53,7 +53,7 @@ class Logger:
     
     @classmethod
     def success(cls, msg: str):
-        """Log de succès."""
+        """Log de succes."""
         cls._log(LogLevel.SUCCESS, msg)
     
     @classmethod
@@ -78,15 +78,15 @@ class Logger:
     
     @classmethod
     def money(cls, msg: str):
-        """Log monétaire/crypto."""
+        """Log monetaire/crypto."""
         cls._log(LogLevel.MONEY, msg)
     
     @classmethod
     def progress(cls, msg: str):
-        """Affiche une ligne de progression (écrasée)."""
+        """Affiche une ligne de progression (ecrasee)."""
         with cls._lock:
             print(f"\r{msg}", end="", flush=True)
 
 
-# Alias pour compatibilité
+# Alias pour compatibilite
 Log = Logger

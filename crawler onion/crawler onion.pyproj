@@ -22,27 +22,7 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="crawler_package\analyzer.py" />
-    <Compile Include="crawler_package\config.py" />
-    <Compile Include="crawler_package\crawler.py" />
-    <Compile Include="crawler_package\database.py" />
-    <Compile Include="crawler_package\logger.py" />
-    <Compile Include="crawler_package\main.py" />
-    <Compile Include="crawler_package\tor.py" />
-    <Compile Include="crawler_package\utils.py" />
-    <Compile Include="crawler_package\web_server.py" />
-    <Compile Include="crawler_package\web_templates.py" />
-    <Compile Include="crawler_package\__init__.py" />
-    <Compile Include="run.py" />
-  </ItemGroup>
-  <ItemGroup>
     <Folder Include="crawler_package\" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="install.sh" />
-    <Content Include="pyproject.toml" />
-    <Content Include="README.md" />
-    <Content Include="requirements.txt" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in

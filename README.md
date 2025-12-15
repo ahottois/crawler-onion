@@ -1,25 +1,25 @@
-# ??? Darknet Omniscient Crawler v6.4
+# Darknet Omniscient Crawler v6.4
 
-Crawler Tor modulaire pour l'exploration et l'analyse de sites .onion avec interface web intégrée.
+Crawler Tor modulaire pour l'exploration et l'analyse de sites .onion avec interface web integree.
 
-## ?? Installation rapide (Ubuntu Server)
+## Installation rapide (Ubuntu Server)
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/ahottois/crawler-onion/master/install.sh | bash
 ```
 
-## ?? Structure du projet
+## Structure du projet
 
 ```
 crawler-onion/
 ??? run.py                          # Lanceur principal
 ??? install.sh                      # Script d'installation Ubuntu
-??? requirements.txt                # Dépendances Python
+??? requirements.txt                # Dependances Python
 ??? README.md                       # Documentation
 ??? crawler_package/
     ??? __init__.py                 # Exports du package
-    ??? config.py                   # Configuration centralisée
-    ??? logger.py                   # Système de logging
+    ??? config.py                   # Configuration centralisee
+    ??? logger.py                   # Systeme de logging
     ??? database.py                 # Gestion SQLite
     ??? analyzer.py                 # Analyse de contenu
     ??? tor.py                      # Interface Tor
@@ -27,10 +27,10 @@ crawler-onion/
     ??? web_server.py               # Serveur HTTP
     ??? web_templates.py            # Templates HTML
     ??? crawler.py                  # Crawler principal
-    ??? main.py                     # Point d'entrée CLI
+    ??? main.py                     # Point d'entree CLI
 ```
 
-## ?? Installation manuelle
+## Installation manuelle
 
 1. **Cloner le repository** :
 ```bash
@@ -38,21 +38,21 @@ git clone https://github.com/ahottois/crawler-onion.git
 cd crawler-onion
 ```
 
-2. **Installer les dépendances** :
+2. **Installer les dependances** :
 ```bash
 pip install -r requirements.txt
 ```
 
-3. **S'assurer que Tor est installé et en cours d'exécution** :
+3. **S'assurer que Tor est installe et en cours d'execution** :
 ```bash
 # Linux
 sudo apt install tor
 sudo systemctl start tor
 
-# Windows - Télécharger le Tor Browser ou le service Tor
+# Windows - Telecharger le Tor Browser ou le service Tor
 ```
 
-## ?? Utilisation
+## Utilisation
 
 ### Lancement basique
 ```bash
@@ -64,15 +64,15 @@ python run.py
 python run.py --help
 
 Options:
-  --workers N      Nombre de workers parallèles (défaut: 15)
-  --timeout N      Timeout en secondes (défaut: 90)
-  --max-pages N    Nombre max de pages à crawler (défaut: 50000)
-  --db FILE        Fichier de base de données
+  --workers N      Nombre de workers paralleles (defaut: 15)
+  --timeout N      Timeout en secondes (defaut: 90)
+  --max-pages N    Nombre max de pages a crawler (defaut: 50000)
+  --db FILE        Fichier de base de donnees
   --output FILE    Fichier JSON de sortie
-  --reset          Supprimer la base de données existante
+  --reset          Supprimer la base de donnees existante
   --add-seed URL   Ajouter une URL seed
-  --web-port N     Port du serveur web (défaut: 4587)
-  --no-web         Désactiver le serveur web
+  --web-port N     Port du serveur web (defaut: 4587)
+  --no-web         Desactiver le serveur web
 ```
 
 ### Exemples
@@ -80,7 +80,7 @@ Options:
 # Crawler avec 20 workers
 python run.py --workers 20
 
-# Réinitialiser la base et ajouter un seed
+# Reinitialiser la base et ajouter un seed
 python run.py --reset --add-seed http://example.onion/
 
 # Sans interface web
@@ -90,48 +90,48 @@ python run.py --no-web
 python run.py --web-port 8080
 ```
 
-## ?? Interface Web
+## Interface Web
 
-L'interface web est accessible par défaut sur `http://localhost:4587`
+L'interface web est accessible par defaut sur `http://localhost:4587`
 
 ### Pages disponibles :
-- **?? Dashboard** : Vue d'ensemble et statistiques en temps réel
-- **?? Recherche** : Recherche dans la base de données
-- **? Sites Fiables** : Classement des sites par score de confiance
+- **Dashboard** : Vue d'ensemble et statistiques en temps reel
+- **Recherche** : Recherche dans la base de donnees
+- **Sites Fiables** : Classement des sites par score de confiance
 
-### Fonctionnalités :
+### Fonctionnalites :
 - Ajout de seeds depuis l'interface
-- Visualisation des domaines crawlés
-- Timeline des découvertes
-- Export des données
+- Visualisation des domaines crawles
+- Timeline des decouvertes
+- Export des donnees
 
-## ?? Données extraites
+## Donnees extraites
 
 Le crawler extrait automatiquement :
-- **Secrets** : Clés API, tokens, credentials
+- **Secrets** : Cles API, tokens, credentials
 - **Crypto** : Adresses Bitcoin, Ethereum, Monero, Litecoin
 - **Social** : Liens Telegram, Discord, Jabber, Session, Wickr
 - **Emails** : Adresses email
 - **IPs** : Fuites d'adresses IP publiques
-- **Tech Stack** : Technologies utilisées (serveur, framework)
+- **Tech Stack** : Technologies utilisees (serveur, framework)
 
-## ?? Modules
+## Modules
 
 | Module | Description |
 |--------|-------------|
-| `config.py` | Configuration centralisée avec dataclass |
+| `config.py` | Configuration centralisee avec dataclass |
 | `logger.py` | Logging thread-safe avec couleurs |
 | `database.py` | Gestion SQLite avec migrations automatiques |
-| `analyzer.py` | Extraction de données via regex |
+| `analyzer.py` | Extraction de donnees via regex |
 | `tor.py` | Interface avec le proxy Tor |
-| `web_server.py` | Serveur HTTP léger intégré |
+| `web_server.py` | Serveur HTTP leger integre |
 | `web_templates.py` | Templates HTML pour le dashboard |
-| `crawler.py` | Logique de crawling multi-threadé |
+| `crawler.py` | Logique de crawling multi-threade |
 
-## ?? Avertissement
+## Avertissement
 
-Ce projet est fourni à des fins éducatives et de recherche uniquement. L'utilisation de ce crawler doit se faire dans le respect des lois applicables.
+Ce projet est fourni a des fins educatives et de recherche uniquement. L'utilisation de ce crawler doit se faire dans le respect des lois applicables.
 
-## ?? Licence
+## Licence
 
 MIT License

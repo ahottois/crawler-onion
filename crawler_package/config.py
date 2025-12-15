@@ -1,6 +1,6 @@
 """
 Module de configuration du crawler.
-Contient tous les paramètres configurables.
+Contient tous les parametres configurables.
 """
 
 from dataclasses import dataclass, field
@@ -9,9 +9,9 @@ from typing import Dict, List
 
 @dataclass
 class Config:
-    """Configuration centralisée du crawler."""
+    """Configuration centralisee du crawler."""
     
-    # Paramètres de crawl
+    # Parametres de crawl
     max_workers: int = 15
     max_pages: int = 50000
     timeout: int = 90
@@ -33,7 +33,7 @@ class Config:
     web_port: int = 4587
     web_enabled: bool = True
     
-    # Extensions à ignorer
+    # Extensions a ignorer
     ignored_extensions: tuple = (
         '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.pdf', '.css', 
         '.ico', '.svg', '.mp4', '.zip', '.tar', '.gz', '.iso', 
@@ -49,14 +49,14 @@ class Config:
         'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0'
     ])
     
-    # Referers pour paraître plus naturel
+    # Referers pour paraitre plus naturel
     referers: List[str] = field(default_factory=lambda: [
         "https://www.google.com/",
         "https://duckduckgo.com/",
         "http://dark.fail/"
     ])
     
-    # URLs de départ (seeds)
+    # URLs de depart (seeds)
     seeds: List[str] = field(default_factory=lambda: [
         # Moteurs de recherche stables
         "http://duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion/",

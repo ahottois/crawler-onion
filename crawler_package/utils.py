@@ -1,6 +1,6 @@
 """
 Module utilitaire.
-Contient des helpers pour diverses opérations.
+Contient des helpers pour diverses operations.
 """
 
 import sys
@@ -19,18 +19,18 @@ class ClipboardHelper:
         Copie le texte dans le presse-papier.
         
         Args:
-            text: Texte à copier
+            text: Texte a copier
             
         Returns:
-            True si la copie a réussi, False sinon
+            True si la copie a reussi, False sinon
         """
         try:
             content = text.encode('utf-8')
             
             if sys.platform.startswith('linux'):
-                # Vérifier si un serveur d'affichage est disponible
+                # Verifier si un serveur d'affichage est disponible
                 if 'DISPLAY' not in os.environ and 'WAYLAND_DISPLAY' not in os.environ:
-                    Log.warn("Pas d'interface graphique détectée. Copie presse-papier ignorée.")
+                    Log.warn("Pas d'interface graphique detectee. Copie presse-papier ignoree.")
                     return False
                 cmd = ['xclip', '-selection', 'clipboard']
             elif sys.platform == 'darwin':
@@ -38,7 +38,7 @@ class ClipboardHelper:
             elif sys.platform == 'win32':
                 cmd = ['clip']
             else:
-                Log.warn("Système non supporté pour la copie automatique.")
+                Log.warn("Systeme non supporte pour la copie automatique.")
                 return False
             
             proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
@@ -46,7 +46,7 @@ class ClipboardHelper:
             return proc.returncode == 0
             
         except FileNotFoundError as e:
-            Log.warn(f"Outil de copie non trouvé: {e}")
+            Log.warn(f"Outil de copie non trouve: {e}")
             return False
         except Exception as e:
             Log.warn(f"Erreur copie presse-papier: {e}")
@@ -62,10 +62,10 @@ class URLHelper:
         Normalise une URL.
         
         Args:
-            url: URL à normaliser
+            url: URL a normaliser
             
         Returns:
-            URL normalisée
+            URL normalisee
         """
         # Supprimer le fragment
         url = url.split('#')[0]
@@ -74,7 +74,7 @@ class URLHelper:
         if '?' in url and len(url.split('?')[1]) > 100:
             url = url.split('?')[0]
         
-        # Ajouter un trailing slash si nécessaire
+        # Ajouter un trailing slash si necessaire
         if not url.endswith('/') and '.' not in url.split('/')[-1]:
             url = url.rstrip('/') + '/'
         
@@ -83,11 +83,11 @@ class URLHelper:
     @staticmethod
     def is_valid_onion(url: str, ignored_extensions: tuple = ()) -> bool:
         """
-        Vérifie si l'URL est une URL .onion valide.
+        Verifie si l'URL est une URL .onion valide.
         
         Args:
-            url: URL à vérifier
-            ignored_extensions: Extensions de fichiers à ignorer
+            url: URL a verifier
+            ignored_extensions: Extensions de fichiers a ignorer
             
         Returns:
             True si l'URL est valide, False sinon
@@ -97,15 +97,15 @@ class URLHelper:
         try:
             parsed = urlparse(url)
             
-            # Vérifier le domaine .onion
+            # Verifier le domaine .onion
             if '.onion' not in parsed.netloc:
                 return False
             
-            # Vérifier les extensions ignorées
+            # Verifier les extensions ignorees
             if url.lower().endswith(ignored_extensions):
                 return False
             
-            # Vérifier le schéma
+            # Verifier le schema
             if parsed.scheme not in ('http', 'https'):
                 return False
             
@@ -133,18 +133,18 @@ class URLHelper:
 
 
 class FileHelper:
-    """Helper pour les opérations sur fichiers."""
+    """Helper pour les operations sur fichiers."""
     
     @staticmethod
     def ensure_dir(filepath: str) -> bool:
         """
-        Crée le répertoire parent si nécessaire.
+        Cree le repertoire parent si necessaire.
         
         Args:
             filepath: Chemin du fichier
             
         Returns:
-            True si le répertoire existe ou a été créé
+            True si le repertoire existe ou a ete cree
         """
         try:
             directory = os.path.dirname(filepath)
@@ -157,13 +157,13 @@ class FileHelper:
     @staticmethod
     def safe_remove(filepath: str) -> bool:
         """
-        Supprime un fichier de manière sécurisée.
+        Supprime un fichier de maniere securisee.
         
         Args:
-            filepath: Chemin du fichier à supprimer
+            filepath: Chemin du fichier a supprimer
             
         Returns:
-            True si le fichier a été supprimé ou n'existait pas
+            True si le fichier a ete supprime ou n'existait pas
         """
         try:
             if os.path.exists(filepath):

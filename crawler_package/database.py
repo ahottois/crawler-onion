@@ -1,6 +1,6 @@
 """
 Module de gestion de la base de donnees SQLite.
-Stocke les resultats du crawling de maniere persistante.
+Stocke les resultats du crawling avec recherche FTS5.
 """
 
 import sqlite3
@@ -9,7 +9,7 @@ import csv
 import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
-from typing import Dict, List, Set, Any, Optional
+from typing import Dict, List, Set, Any, Optional, Tuple
 from urllib.parse import urlparse
 from threading import Lock
 import threading
@@ -18,7 +18,7 @@ from .logger import Log
 
 
 class DatabaseManager:
-    """Gestionnaire de base de donnees SQLite thread-safe."""
+    """Gestionnaire de base de donnees SQLite thread-safe avec FTS5."""
     
     def __init__(self, db_file: str):
         self.db_file = db_file
@@ -36,7 +36,7 @@ class DatabaseManager:
             conn.close()
     
     def _init_db(self):
-        """Initialise le schema de la base de donnees."""
+        """Initialise le schema complet de la base."""
         with self._get_connection() as conn:
             # Table principale
             conn.execute('''
@@ -55,11 +55,17 @@ class DatabaseManager:
                     socials TEXT DEFAULT '{}',
                     json_data TEXT DEFAULT '[]',
                     content_length INTEGER DEFAULT 0,
+                    content_text TEXT DEFAULT '',
                     language TEXT DEFAULT '',
                     keywords TEXT DEFAULT '[]',
                     category TEXT DEFAULT '',
                     tags TEXT DEFAULT '[]',
                     risk_score INTEGER DEFAULT 0,
+                    priority_score INTEGER DEFAULT 50,
+                    crawl_count INTEGER DEFAULT 0,
+                    intel_density REAL DEFAULT 0,
+                    marked_important INTEGER DEFAULT 0,
+                    marked_false_positive INTEGER DEFAULT 0,
                     found_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_crawl TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -67,8 +73,43 @@ class DatabaseManager:
             conn.execute('CREATE INDEX IF NOT EXISTS idx_domain ON intel(domain)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_status ON intel(status)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_risk ON intel(risk_score)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_priority ON intel(priority_score)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_found_at ON intel(found_at)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_category ON intel(category)')
             
-            # Table pour les domaines blacklistes/whitelistes
+            # Table FTS5 pour recherche full-text
+            try:
+                conn.execute('''
+                    CREATE VIRTUAL TABLE IF NOT EXISTS intel_fts USING fts5(
+                        url, domain, title, content_text, emails_text, 
+                        content='intel', content_rowid='rowid'
+                    )
+                ''')
+            except:
+                pass  # FTS5 peut ne pas etre disponible
+            
+            # Table pour les domaines avec profils
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS domains (
+                    domain TEXT PRIMARY KEY,
+                    status TEXT DEFAULT 'normal',
+                    trust_level TEXT DEFAULT 'unknown',
+                    crawl_profile TEXT DEFAULT 'default',
+                    max_depth INTEGER DEFAULT 5,
+                    delay_ms INTEGER DEFAULT 1000,
+                    max_pages INTEGER DEFAULT 100,
+                    priority_boost INTEGER DEFAULT 0,
+                    notes TEXT DEFAULT '',
+                    total_pages INTEGER DEFAULT 0,
+                    success_pages INTEGER DEFAULT 0,
+                    intel_count INTEGER DEFAULT 0,
+                    last_intel_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Table pour les listes de domaines
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS domain_lists (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,73 +129,131 @@ class DatabaseManager:
                     url TEXT,
                     domain TEXT,
                     severity TEXT DEFAULT 'info',
+                    data TEXT DEFAULT '{}',
+                    webhook_sent INTEGER DEFAULT 0,
                     read INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             
-            # Migration: ajouter les colonnes manquantes
-            existing = self._get_existing_columns(conn)
-            new_columns = {
-                'language': 'TEXT DEFAULT ""',
-                'keywords': 'TEXT DEFAULT "[]"',
-                'category': 'TEXT DEFAULT ""',
-                'tags': 'TEXT DEFAULT "[]"',
-                'risk_score': 'INTEGER DEFAULT 0',
-                'last_crawl': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-            }
-            for col, col_type in new_columns.items():
-                if col not in existing:
-                    try:
-                        conn.execute(f'ALTER TABLE intel ADD COLUMN {col} {col_type}')
-                    except:
-                        pass
+            # Table pour les stats horaires
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS hourly_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    hour TEXT,
+                    urls_crawled INTEGER DEFAULT 0,
+                    success_count INTEGER DEFAULT 0,
+                    error_count INTEGER DEFAULT 0,
+                    new_domains INTEGER DEFAULT 0,
+                    intel_found INTEGER DEFAULT 0,
+                    queue_size INTEGER DEFAULT 0
+                )
+            ''')
+            
+            # Table pour les regles de priorite
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS priority_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT,
+                    condition_type TEXT,
+                    condition_value TEXT,
+                    priority_modifier INTEGER DEFAULT 0,
+                    enabled INTEGER DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Table pour les entites OSINT
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS entities (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_type TEXT,
+                    value TEXT,
+                    normalized_value TEXT,
+                    source_url TEXT,
+                    source_domain TEXT,
+                    metadata TEXT DEFAULT '{}',
+                    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(entity_type, value)
+                )
+            ''')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_type ON entities(entity_type)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_value ON entities(value)')
+            
+            # Migration colonnes
+            self._migrate_columns(conn)
     
-    def _get_existing_columns(self, conn) -> Set[str]:
+    def _migrate_columns(self, conn):
+        """Ajoute les nouvelles colonnes si necessaire."""
+        existing = self._get_existing_columns(conn, 'intel')
+        new_columns = {
+            'content_text': 'TEXT DEFAULT ""',
+            'priority_score': 'INTEGER DEFAULT 50',
+            'crawl_count': 'INTEGER DEFAULT 0',
+            'intel_density': 'REAL DEFAULT 0',
+            'marked_important': 'INTEGER DEFAULT 0',
+            'marked_false_positive': 'INTEGER DEFAULT 0'
+        }
+        for col, col_type in new_columns.items():
+            if col not in existing:
+                try:
+                    conn.execute(f'ALTER TABLE intel ADD COLUMN {col} {col_type}')
+                except:
+                    pass
+    
+    def _get_existing_columns(self, conn, table: str) -> Set[str]:
         """Retourne les colonnes existantes."""
-        cursor = conn.execute("PRAGMA table_info(intel)")
+        cursor = conn.execute(f"PRAGMA table_info({table})")
         return {row[1] for row in cursor.fetchall()}
     
     def save(self, data: Dict[str, Any]):
         """Sauvegarde les donnees d'une page crawlee."""
         domain = urlparse(data['url']).netloc
         risk_score = self._calculate_risk_score(data)
+        intel_density = self._calculate_intel_density(data)
         
         with self._lock:
             with self._get_connection() as conn:
+                # Sauvegarder dans intel
                 conn.execute('''
                     INSERT OR REPLACE INTO intel 
                     (url, domain, title, status, depth, tech_stack, secrets_found, 
                      ip_leaks, emails, comments, cryptos, socials, json_data, 
-                     content_length, risk_score, last_crawl)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                     content_length, content_text, language, category, 
+                     risk_score, intel_density, crawl_count, last_crawl)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                            ?, ?, COALESCE((SELECT crawl_count FROM intel WHERE url = ?) + 1, 1),
+                            CURRENT_TIMESTAMP)
                 ''', (
-                    data['url'],
-                    domain,
-                    data.get('title', ''),
-                    data.get('status', 0),
-                    data.get('depth', 0),
-                    json.dumps(data.get('tech_stack', [])),
-                    json.dumps(data.get('secrets', {})),
-                    json.dumps(data.get('ip_leaks', [])),
-                    json.dumps(data.get('emails', [])),
-                    json.dumps(data.get('comments', [])),
-                    json.dumps(data.get('cryptos', {})),
-                    json.dumps(data.get('socials', {})),
-                    json.dumps(data.get('json_data', [])),
-                    data.get('content_length', 0),
-                    risk_score
+                    data['url'], domain, data.get('title', ''), data.get('status', 0),
+                    data.get('depth', 0), json.dumps(data.get('tech_stack', [])),
+                    json.dumps(data.get('secrets', {})), json.dumps(data.get('ip_leaks', [])),
+                    json.dumps(data.get('emails', [])), json.dumps(data.get('comments', [])),
+                    json.dumps(data.get('cryptos', {})), json.dumps(data.get('socials', {})),
+                    json.dumps(data.get('json_data', [])), data.get('content_length', 0),
+                    data.get('content_text', '')[:5000], data.get('language', ''),
+                    data.get('category', ''), risk_score, intel_density, data['url']
                 ))
                 
-                # Creer une alerte si risque eleve
+                # Mettre a jour stats domaine
+                self._update_domain_stats(conn, domain, data)
+                
+                # Extraire et sauvegarder entites OSINT
+                self._extract_entities(conn, data, domain)
+                
+                # Creer alertes si necessaire
                 if risk_score >= 70:
                     self._create_alert(conn, 'high_risk', 
-                        f"Site a haut risque detecte: {domain}", 
-                        data['url'], domain, 'danger')
-                elif data.get('secrets'):
-                    self._create_alert(conn, 'secret_found',
-                        f"Secret trouve sur {domain}",
-                        data['url'], domain, 'warning')
+                        f"Site a haut risque: {domain} (score: {risk_score})", 
+                        data['url'], domain, 'danger', {'risk_score': risk_score})
+                
+                secrets = data.get('secrets', {})
+                if secrets:
+                    for secret_type in secrets.keys():
+                        self._create_alert(conn, 'secret_found',
+                            f"{secret_type} trouve sur {domain}",
+                            data['url'], domain, 'warning', {'type': secret_type})
     
     def _calculate_risk_score(self, data: Dict) -> int:
         """Calcule un score de risque (0-100)."""
@@ -177,28 +276,544 @@ class DatabaseManager:
         
         title = data.get('title', '').lower()
         suspicious = ['market', 'shop', 'buy', 'sell', 'drug', 'weapon', 
-                     'hack', 'leak', 'dump', 'card', 'fraud', 'exploit']
+                     'hack', 'leak', 'dump', 'card', 'fraud', 'exploit',
+                     'ransomware', 'creds', 'password', 'login', 'account']
         for word in suspicious:
             if word in title:
                 score += 5
         
         return min(score, 100)
     
-    def _create_alert(self, conn, alert_type: str, message: str, url: str, domain: str, severity: str):
+    def _calculate_intel_density(self, data: Dict) -> float:
+        """Calcule la densite d'intel (intel/ko)."""
+        content_len = max(data.get('content_length', 1), 1)
+        intel_count = (
+            len(data.get('secrets', {})) +
+            len(data.get('cryptos', {})) +
+            len(data.get('emails', [])) +
+            len(data.get('socials', {}))
+        )
+        return round(intel_count / (content_len / 1024), 4)
+    
+    def _update_domain_stats(self, conn, domain: str, data: Dict):
+        """Met a jour les statistiques du domaine."""
+        has_intel = bool(data.get('secrets') or data.get('cryptos') or data.get('emails'))
+        
+        conn.execute('''
+            INSERT INTO domains (domain, total_pages, success_pages, intel_count, last_intel_at, updated_at)
+            VALUES (?, 1, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(domain) DO UPDATE SET
+                total_pages = total_pages + 1,
+                success_pages = success_pages + ?,
+                intel_count = intel_count + ?,
+                last_intel_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE last_intel_at END,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (domain, 
+              1 if data.get('status') == 200 else 0,
+              1 if has_intel else 0,
+              datetime.now() if has_intel else None,
+              1 if data.get('status') == 200 else 0,
+              1 if has_intel else 0,
+              has_intel))
+    
+    def _extract_entities(self, conn, data: Dict, domain: str):
+        """Extrait et sauvegarde les entites OSINT."""
+        url = data['url']
+        
+        # Emails
+        for email in data.get('emails', [])[:50]:
+            self._save_entity(conn, 'email', email, url, domain)
+        
+        # Crypto
+        for coin, addresses in data.get('cryptos', {}).items():
+            for addr in addresses[:20]:
+                self._save_entity(conn, f'crypto_{coin}', addr, url, domain, {'coin': coin})
+        
+        # Socials
+        for network, handles in data.get('socials', {}).items():
+            for handle in handles[:10]:
+                self._save_entity(conn, f'social_{network}', handle, url, domain)
+    
+    def _save_entity(self, conn, entity_type: str, value: str, url: str, domain: str, metadata: Dict = None):
+        """Sauvegarde une entite."""
+        try:
+            conn.execute('''
+                INSERT INTO entities (entity_type, value, normalized_value, source_url, source_domain, metadata)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(entity_type, value) DO UPDATE SET
+                    last_seen = CURRENT_TIMESTAMP
+            ''', (entity_type, value, value.lower(), url, domain, json.dumps(metadata or {})))
+        except:
+            pass
+    
+    def _create_alert(self, conn, alert_type: str, message: str, url: str, domain: str, severity: str, data: Dict = None):
         """Cree une nouvelle alerte."""
         conn.execute('''
-            INSERT INTO alerts (type, message, url, domain, severity)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (alert_type, message, url, domain, severity))
+            INSERT INTO alerts (type, message, url, domain, severity, data)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (alert_type, message, url, domain, severity, json.dumps(data or {})))
+    
+    # ========== RECHERCHE FULL-TEXT ==========
+    
+    def search_fulltext(self, query: str, filters: Dict = None, limit: int = 100, offset: int = 0) -> Tuple[List[Dict], int]:
+        """Recherche full-text avec filtres."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            
+            # Construction requete
+            where_clauses = ["status = 200"]
+            params = []
+            
+            if query:
+                where_clauses.append("(title LIKE ? OR domain LIKE ? OR url LIKE ? OR content_text LIKE ?)")
+                search_pattern = f"%{query}%"
+                params.extend([search_pattern] * 4)
+            
+            if filters:
+                # Filtre temporel
+                if filters.get('time_range'):
+                    time_map = {
+                        'hour': '-1 hour', 'day': '-1 day', 
+                        'week': '-7 days', 'month': '-30 days'
+                    }
+                    if filters['time_range'] in time_map:
+                        where_clauses.append(f"found_at >= datetime('now', ?)")
+                        params.append(time_map[filters['time_range']])
+                
+                # Filtre par type d'intel
+                if filters.get('intel_type'):
+                    type_map = {
+                        'crypto': "cryptos != '{}'",
+                        'email': "emails != '[]'",
+                        'social': "socials != '{}'",
+                        'secret': "secrets_found != '{}'",
+                        'ip_leak': "ip_leaks != '[]'"
+                    }
+                    if filters['intel_type'] in type_map:
+                        where_clauses.append(type_map[filters['intel_type']])
+                
+                # Filtre par risque
+                if filters.get('min_risk'):
+                    where_clauses.append("risk_score >= ?")
+                    params.append(filters['min_risk'])
+                
+                # Filtre par categorie
+                if filters.get('category'):
+                    where_clauses.append("category = ?")
+                    params.append(filters['category'])
+                
+                # Filtre par domaine
+                if filters.get('domain'):
+                    where_clauses.append("domain LIKE ?")
+                    params.append(f"%{filters['domain']}%")
+                
+                # Exclure faux positifs
+                if filters.get('exclude_false_positive'):
+                    where_clauses.append("marked_false_positive = 0")
+                
+                # Seulement importants
+                if filters.get('important_only'):
+                    where_clauses.append("marked_important = 1")
+            
+            where_sql = " AND ".join(where_clauses)
+            
+            # Compter total
+            count_sql = f"SELECT COUNT(*) FROM intel WHERE {where_sql}"
+            cursor = conn.execute(count_sql, params)
+            total = cursor.fetchone()[0]
+            
+            # Recuperer resultats
+            sql = f"""
+                SELECT * FROM intel WHERE {where_sql}
+                ORDER BY risk_score DESC, found_at DESC
+                LIMIT ? OFFSET ?
+            """
+            params.extend([limit, offset])
+            cursor = conn.execute(sql, params)
+            
+            results = []
+            json_fields = ['tech_stack', 'secrets_found', 'ip_leaks', 'emails', 
+                          'comments', 'cryptos', 'socials', 'tags']
+            
+            for row in cursor.fetchall():
+                data = dict(row)
+                for field in json_fields:
+                    try:
+                        data[field] = json.loads(data[field]) if data.get(field) else []
+                    except:
+                        data[field] = []
+                results.append(data)
+            
+            return results, total
+    
+    def get_intel_item(self, url: str) -> Optional[Dict]:
+        """Recupere les details complets d'un item intel."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("SELECT * FROM intel WHERE url = ?", (url,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            data = dict(row)
+            json_fields = ['tech_stack', 'secrets_found', 'ip_leaks', 'emails', 
+                          'comments', 'cryptos', 'socials', 'tags', 'json_data']
+            for field in json_fields:
+                try:
+                    data[field] = json.loads(data[field]) if data.get(field) else []
+                except:
+                    data[field] = []
+            
+            # Recuperer entites liees
+            cursor = conn.execute("""
+                SELECT entity_type, value, first_seen FROM entities 
+                WHERE source_url = ? ORDER BY entity_type
+            """, (url,))
+            data['entities'] = [dict(r) for r in cursor.fetchall()]
+            
+            return data
+    
+    def mark_intel(self, url: str, mark_type: str, value: bool = True):
+        """Marque un item intel (important, faux_positif)."""
+        column = 'marked_important' if mark_type == 'important' else 'marked_false_positive'
+        with self._get_connection() as conn:
+            conn.execute(f"UPDATE intel SET {column} = ? WHERE url = ?", (1 if value else 0, url))
+    
+    # ========== GESTION PRIORITE ET QUEUE ==========
+    
+    def get_queue_advanced(self, limit: int = 100, sort_by: str = 'priority') -> List[Dict]:
+        """Recupere la queue avec priorite calculee."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            
+            order_map = {
+                'priority': 'priority_score DESC, depth ASC',
+                'depth': 'depth ASC, priority_score DESC',
+                'recent': 'found_at DESC',
+                'risk': 'risk_score DESC'
+            }
+            order = order_map.get(sort_by, order_map['priority'])
+            
+            cursor = conn.execute(f"""
+                SELECT i.url, i.domain, i.depth, i.priority_score, i.risk_score,
+                       i.found_at, d.status as domain_status, d.priority_boost
+                FROM intel i
+                LEFT JOIN domains d ON i.domain = d.domain
+                WHERE i.status = 0
+                ORDER BY {order}
+                LIMIT ?
+            """, (limit,))
+            
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def update_priority(self, url: str, priority: int):
+        """Met a jour la priorite d'une URL."""
+        with self._get_connection() as conn:
+            conn.execute("UPDATE intel SET priority_score = ? WHERE url = ?", (priority, url))
+    
+    def boost_domain(self, domain: str, boost: int):
+        """Booste la priorite d'un domaine."""
+        with self._get_connection() as conn:
+            conn.execute("""
+                UPDATE domains SET priority_boost = ? WHERE domain = ?
+            """, (boost, domain))
+            conn.execute("""
+                UPDATE intel SET priority_score = priority_score + ? WHERE domain = ?
+            """, (boost, domain))
+    
+    def freeze_domain(self, domain: str, freeze: bool = True):
+        """Gele/degele un domaine."""
+        status = 'frozen' if freeze else 'normal'
+        with self._get_connection() as conn:
+            conn.execute("UPDATE domains SET status = ? WHERE domain = ?", (status, domain))
+    
+    def get_priority_rules(self) -> List[Dict]:
+        """Recupere les regles de priorite."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("SELECT * FROM priority_rules ORDER BY id")
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def add_priority_rule(self, name: str, condition_type: str, condition_value: str, modifier: int):
+        """Ajoute une regle de priorite."""
+        with self._get_connection() as conn:
+            conn.execute("""
+                INSERT INTO priority_rules (name, condition_type, condition_value, priority_modifier)
+                VALUES (?, ?, ?, ?)
+            """, (name, condition_type, condition_value, modifier))
+    
+    # ========== GESTION DOMAINES ==========
+    
+    def get_domain_profile(self, domain: str) -> Optional[Dict]:
+        """Recupere le profil complet d'un domaine."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("SELECT * FROM domains WHERE domain = ?", (domain,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            
+            data = dict(row)
+            
+            # Stats supplementaires
+            cursor = conn.execute("""
+                SELECT 
+                    COUNT(*) as total_urls,
+                    SUM(CASE WHEN status = 200 THEN 1 ELSE 0 END) as success_urls,
+                    AVG(risk_score) as avg_risk,
+                    MAX(risk_score) as max_risk,
+                    SUM(CASE WHEN secrets_found != '{}' THEN 1 ELSE 0 END) as with_secrets
+                FROM intel WHERE domain = ?
+            """, (domain,))
+            stats = cursor.fetchone()
+            data.update(dict(stats))
+            
+            return data
+    
+    def update_domain_profile(self, domain: str, profile: Dict):
+        """Met a jour le profil d'un domaine."""
+        with self._get_connection() as conn:
+            conn.execute("""
+                INSERT INTO domains (domain, status, trust_level, crawl_profile, max_depth, 
+                                    delay_ms, max_pages, priority_boost, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(domain) DO UPDATE SET
+                    status = ?, trust_level = ?, crawl_profile = ?, max_depth = ?,
+                    delay_ms = ?, max_pages = ?, priority_boost = ?, notes = ?,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (domain, profile.get('status', 'normal'), profile.get('trust_level', 'unknown'),
+                  profile.get('crawl_profile', 'default'), profile.get('max_depth', 5),
+                  profile.get('delay_ms', 1000), profile.get('max_pages', 100),
+                  profile.get('priority_boost', 0), profile.get('notes', ''),
+                  profile.get('status', 'normal'), profile.get('trust_level', 'unknown'),
+                  profile.get('crawl_profile', 'default'), profile.get('max_depth', 5),
+                  profile.get('delay_ms', 1000), profile.get('max_pages', 100),
+                  profile.get('priority_boost', 0), profile.get('notes', '')))
+    
+    def get_domains_list(self, status: str = None, limit: int = 100) -> List[Dict]:
+        """Liste les domaines avec leurs stats."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            
+            sql = "SELECT * FROM domains"
+            params = []
+            if status:
+                sql += " WHERE status = ?"
+                params.append(status)
+            sql += " ORDER BY total_pages DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor = conn.execute(sql, params)
+            return [dict(row) for row in cursor.fetchall()]
+    
+    # ========== MONITORING ET STATS ==========
+    
+    def record_hourly_stats(self, stats: Dict):
+        """Enregistre les stats horaires."""
+        hour = datetime.now().strftime('%Y-%m-%d %H:00')
+        with self._get_connection() as conn:
+            conn.execute("""
+                INSERT INTO hourly_stats (hour, urls_crawled, success_count, error_count, 
+                                         new_domains, intel_found, queue_size)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT DO UPDATE SET
+                    urls_crawled = urls_crawled + ?,
+                    success_count = success_count + ?,
+                    error_count = error_count + ?,
+                    new_domains = new_domains + ?,
+                    intel_found = intel_found + ?,
+                    queue_size = ?
+            """, (hour, stats.get('crawled', 0), stats.get('success', 0), 
+                  stats.get('errors', 0), stats.get('new_domains', 0),
+                  stats.get('intel', 0), stats.get('queue', 0),
+                  stats.get('crawled', 0), stats.get('success', 0),
+                  stats.get('errors', 0), stats.get('new_domains', 0),
+                  stats.get('intel', 0), stats.get('queue', 0)))
+    
+    def get_hourly_stats(self, hours: int = 24) -> List[Dict]:
+        """Recupere les stats horaires."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT * FROM hourly_stats 
+                WHERE hour >= datetime('now', ?)
+                ORDER BY hour DESC
+            """, (f'-{hours} hours',))
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_error_stats(self) -> Dict:
+        """Statistiques des erreurs."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT status, COUNT(*) as count FROM intel 
+                WHERE status != 200 AND status != 0
+                GROUP BY status ORDER BY count DESC
+            """)
+            errors = {row[0]: row[1] for row in cursor.fetchall()}
+            
+            cursor = conn.execute("""
+                SELECT COUNT(*) FROM intel WHERE status >= 500
+            """)
+            server_errors = cursor.fetchone()[0]
+            
+            cursor = conn.execute("""
+                SELECT COUNT(*) FROM intel WHERE status >= 400 AND status < 500
+            """)
+            client_errors = cursor.fetchone()[0]
+            
+            return {
+                'by_code': errors,
+                'server_errors': server_errors,
+                'client_errors': client_errors,
+                'total_errors': server_errors + client_errors
+            }
+    
+    # ========== ENTITES OSINT ==========
+    
+    def get_entities(self, entity_type: str = None, limit: int = 100) -> List[Dict]:
+        """Recupere les entites extraites."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            
+            sql = "SELECT * FROM entities"
+            params = []
+            if entity_type:
+                sql += " WHERE entity_type = ?"
+                params.append(entity_type)
+            sql += " ORDER BY last_seen DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor = conn.execute(sql, params)
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_entity_stats(self) -> Dict:
+        """Stats sur les entites."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT entity_type, COUNT(*) as count FROM entities 
+                GROUP BY entity_type ORDER BY count DESC
+            """)
+            return {row[0]: row[1] for row in cursor.fetchall()}
+    
+    # ========== ALERTES ==========
+    
+    def get_alerts(self, limit: int = 50, unread_only: bool = False, 
+                   severity: str = None) -> List[Dict]:
+        """Recupere les alertes."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            
+            where = []
+            params = []
+            if unread_only:
+                where.append("read = 0")
+            if severity:
+                where.append("severity = ?")
+                params.append(severity)
+            
+            sql = "SELECT * FROM alerts"
+            if where:
+                sql += " WHERE " + " AND ".join(where)
+            sql += " ORDER BY created_at DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor = conn.execute(sql, params)
+            results = []
+            for row in cursor.fetchall():
+                data = dict(row)
+                try:
+                    data['data'] = json.loads(data['data']) if data.get('data') else {}
+                except:
+                    data['data'] = {}
+                results.append(data)
+            return results
+    
+    def get_alerts_for_webhook(self) -> List[Dict]:
+        """Recupere les alertes non envoyees par webhook."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT * FROM alerts WHERE webhook_sent = 0 
+                ORDER BY created_at ASC LIMIT 50
+            """)
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def mark_alerts_sent(self, alert_ids: List[int]):
+        """Marque les alertes comme envoyees."""
+        if not alert_ids:
+            return
+        with self._get_connection() as conn:
+            placeholders = ','.join('?' * len(alert_ids))
+            conn.execute(f"UPDATE alerts SET webhook_sent = 1 WHERE id IN ({placeholders})", alert_ids)
+    
+    def mark_alerts_read(self, alert_ids: List[int] = None):
+        """Marque les alertes comme lues."""
+        with self._get_connection() as conn:
+            if alert_ids:
+                placeholders = ','.join('?' * len(alert_ids))
+                conn.execute(f"UPDATE alerts SET read = 1 WHERE id IN ({placeholders})", alert_ids)
+            else:
+                conn.execute("UPDATE alerts SET read = 1")
+    
+    def clear_alerts(self):
+        """Supprime les alertes."""
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM alerts")
+    
+    # ========== BLACKLIST/WHITELIST ==========
+    
+    def add_to_blacklist(self, domain: str, reason: str = ""):
+        """Ajoute a la blacklist."""
+        with self._get_connection() as conn:
+            conn.execute('''
+                INSERT OR REPLACE INTO domain_lists (domain, list_type, reason)
+                VALUES (?, 'blacklist', ?)
+            ''', (domain, reason))
+    
+    def add_to_whitelist(self, domain: str, reason: str = ""):
+        """Ajoute a la whitelist."""
+        with self._get_connection() as conn:
+            conn.execute('''
+                INSERT OR REPLACE INTO domain_lists (domain, list_type, reason)
+                VALUES (?, 'whitelist', ?)
+            ''', (domain, reason))
+    
+    def is_blacklisted(self, domain: str) -> bool:
+        """Verifie si blackliste."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT 1 FROM domain_lists WHERE domain = ? AND list_type = 'blacklist'",
+                (domain,)
+            )
+            return cursor.fetchone() is not None
+    
+    def get_domain_lists(self) -> Dict[str, List[Dict]]:
+        """Recupere les listes."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("SELECT * FROM domain_lists ORDER BY added_at DESC")
+            rows = [dict(row) for row in cursor.fetchall()]
+            return {
+                'blacklist': [r for r in rows if r['list_type'] == 'blacklist'],
+                'whitelist': [r for r in rows if r['list_type'] == 'whitelist']
+            }
+    
+    def remove_from_list(self, domain: str):
+        """Retire des listes."""
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM domain_lists WHERE domain = ?", (domain,))
+    
+    # ========== EXPORTS ==========
     
     def get_visited_urls(self) -> Set[str]:
-        """Retourne l'ensemble des URLs deja visitees."""
+        """URLs visitees."""
         with self._get_connection() as conn:
             cursor = conn.execute("SELECT url FROM intel")
             return {row[0] for row in cursor.fetchall()}
     
     def get_stats(self) -> Dict[str, Any]:
-        """Retourne les statistiques completes."""
+        """Stats completes."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT 
@@ -215,16 +830,6 @@ class DatabaseManager:
             """)
             row = cursor.fetchone()
             
-            # Top domaines
-            cursor2 = conn.execute("""
-                SELECT domain, COUNT(*) as pages, AVG(risk_score) as risk
-                FROM intel WHERE status = 200
-                GROUP BY domain ORDER BY pages DESC LIMIT 10
-            """)
-            top_domains = [{'domain': r[0], 'pages': r[1], 'risk': round(r[2] or 0, 1)} 
-                          for r in cursor2.fetchall()]
-            
-            # Alertes non lues
             try:
                 cursor3 = conn.execute("SELECT COUNT(*) FROM alerts WHERE read = 0")
                 unread_alerts = cursor3.fetchone()[0]
@@ -241,121 +846,18 @@ class DatabaseManager:
                 'avg_risk': round(row[6] or 0, 1),
                 'max_risk': row[7] or 0,
                 'total_size_mb': round((row[8] or 0) / 1024 / 1024, 2),
-                'top_domains': top_domains,
                 'unread_alerts': unread_alerts
             }
     
-    def get_alerts(self, limit: int = 50, unread_only: bool = False) -> List[Dict]:
-        """Recupere les alertes."""
-        with self._get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            query = "SELECT * FROM alerts"
-            if unread_only:
-                query += " WHERE read = 0"
-            query += " ORDER BY created_at DESC LIMIT ?"
-            cursor = conn.execute(query, (limit,))
-            return [dict(row) for row in cursor.fetchall()]
-    
-    def mark_alerts_read(self, alert_ids: List[int] = None):
-        """Marque les alertes comme lues."""
-        with self._get_connection() as conn:
-            if alert_ids:
-                placeholders = ','.join('?' * len(alert_ids))
-                conn.execute(f"UPDATE alerts SET read = 1 WHERE id IN ({placeholders})", alert_ids)
-            else:
-                conn.execute("UPDATE alerts SET read = 1")
-    
-    def clear_alerts(self):
-        """Supprime toutes les alertes."""
-        with self._get_connection() as conn:
-            conn.execute("DELETE FROM alerts")
-    
-    def add_to_blacklist(self, domain: str, reason: str = ""):
-        """Ajoute un domaine a la blacklist."""
-        with self._get_connection() as conn:
-            conn.execute('''
-                INSERT OR REPLACE INTO domain_lists (domain, list_type, reason)
-                VALUES (?, 'blacklist', ?)
-            ''', (domain, reason))
-    
-    def add_to_whitelist(self, domain: str, reason: str = ""):
-        """Ajoute un domaine a la whitelist."""
-        with self._get_connection() as conn:
-            conn.execute('''
-                INSERT OR REPLACE INTO domain_lists (domain, list_type, reason)
-                VALUES (?, 'whitelist', ?)
-            ''', (domain, reason))
-    
-    def is_blacklisted(self, domain: str) -> bool:
-        """Verifie si un domaine est blackliste."""
-        with self._get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT 1 FROM domain_lists WHERE domain = ? AND list_type = 'blacklist'",
-                (domain,)
-            )
-            return cursor.fetchone() is not None
-    
-    def get_domain_lists(self) -> Dict[str, List[Dict]]:
-        """Recupere les listes de domaines."""
-        with self._get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.execute("SELECT * FROM domain_lists ORDER BY added_at DESC")
-            rows = [dict(row) for row in cursor.fetchall()]
-            return {
-                'blacklist': [r for r in rows if r['list_type'] == 'blacklist'],
-                'whitelist': [r for r in rows if r['list_type'] == 'whitelist']
-            }
-    
-    def remove_from_list(self, domain: str):
-        """Retire un domaine des listes."""
-        with self._get_connection() as conn:
-            conn.execute("DELETE FROM domain_lists WHERE domain = ?", (domain,))
-    
     def export_json(self, filepath: str, filters: Dict = None) -> int:
-        """Exporte les resultats en JSON."""
-        with self._get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            
-            query = "SELECT * FROM intel WHERE status = 200"
-            params = []
-            
-            if filters:
-                if filters.get('domain'):
-                    query += " AND domain LIKE ?"
-                    params.append(f"%{filters['domain']}%")
-                if filters.get('min_risk'):
-                    query += " AND risk_score >= ?"
-                    params.append(filters['min_risk'])
-                if filters.get('has_crypto'):
-                    query += " AND cryptos != '{}'"
-                if filters.get('has_secrets'):
-                    query += " AND secrets_found != '{}'"
-            
-            cursor = conn.execute(query, params)
-            
-            results = []
-            json_fields = ['tech_stack', 'secrets_found', 'ip_leaks', 'emails', 
-                          'comments', 'cryptos', 'socials', 'json_data']
-            
-            for row in cursor.fetchall():
-                data = dict(row)
-                for field in json_fields:
-                    try:
-                        data[field] = json.loads(data[field]) if data.get(field) else []
-                    except:
-                        data[field] = []
-                
-                has_intel = any([data['secrets_found'], data['ip_leaks'], data['emails'],
-                                data['cryptos'], data['socials']])
-                if has_intel or not filters:
-                    results.append(data)
-        
+        """Export JSON."""
+        results, _ = self.search_fulltext('', filters, limit=10000)
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, ensure_ascii=False, default=str)
         return len(results)
     
     def export_csv(self, filepath: str, include_all: bool = False) -> int:
-        """Exporte les resultats en CSV."""
+        """Export CSV."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             
@@ -364,10 +866,7 @@ class DatabaseManager:
             else:
                 cursor = conn.execute("""
                     SELECT * FROM intel 
-                    WHERE status = 200 AND (
-                        secrets_found != '{}' OR cryptos != '{}' OR 
-                        socials != '{}' OR emails != '[]'
-                    )
+                    WHERE status = 200 AND (secrets_found != '{}' OR cryptos != '{}' OR emails != '[]')
                     ORDER BY risk_score DESC
                 """)
             
@@ -377,147 +876,115 @@ class DatabaseManager:
             
             with open(filepath, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(['URL', 'Domain', 'Title', 'Status', 'Risk Score', 
-                               'Emails', 'Crypto', 'Secrets', 'Socials', 'Found At'])
+                writer.writerow(['URL', 'Domain', 'Title', 'Status', 'Risk', 'Category',
+                               'Emails', 'Crypto', 'Secrets', 'Found At'])
                 
                 for row in rows:
                     emails = json.loads(row['emails']) if row['emails'] else []
                     cryptos = json.loads(row['cryptos']) if row['cryptos'] else {}
                     secrets = json.loads(row['secrets_found']) if row['secrets_found'] else {}
-                    socials = json.loads(row['socials']) if row['socials'] else {}
                     
                     writer.writerow([
-                        row['url'],
-                        row['domain'],
-                        (row['title'] or '')[:100],
-                        row['status'],
-                        row['risk_score'] if 'risk_score' in row.keys() else 0,
+                        row['url'], row['domain'], (row['title'] or '')[:100],
+                        row['status'], row['risk_score'] if 'risk_score' in row.keys() else 0,
+                        row['category'] if 'category' in row.keys() else '',
                         '; '.join(emails[:5]),
                         '; '.join([f"{k}:{len(v)}" for k, v in cryptos.items()]),
-                        '; '.join(secrets.keys()),
-                        '; '.join(socials.keys()),
-                        row['found_at']
+                        '; '.join(secrets.keys()), row['found_at']
                     ])
-            
             return len(rows)
     
     def export_emails(self, filepath: str) -> int:
-        """Exporte uniquement les emails."""
+        """Export emails."""
         with self._get_connection() as conn:
-            cursor = conn.execute("""
-                SELECT DISTINCT domain, emails FROM intel 
-                WHERE emails != '[]' AND status = 200
-            """)
-            
-            all_emails = set()
-            domain_emails = {}
-            
-            for row in cursor.fetchall():
-                domain = row[0]
-                emails = json.loads(row[1]) if row[1] else []
-                for email in emails:
-                    all_emails.add(email)
-                    if domain not in domain_emails:
-                        domain_emails[domain] = set()
-                    domain_emails[domain].add(email)
+            cursor = conn.execute("SELECT DISTINCT value FROM entities WHERE entity_type = 'email'")
+            emails = [row[0] for row in cursor.fetchall()]
             
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(f"# Emails - {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
-                f.write(f"# Total: {len(all_emails)} emails\n\n")
-                
-                for domain, emails in sorted(domain_emails.items()):
-                    f.write(f"\n## {domain}\n")
-                    for email in sorted(emails):
-                        f.write(f"{email}\n")
-            
-            return len(all_emails)
+                f.write(f"# Total: {len(emails)}\n\n")
+                for email in sorted(emails):
+                    f.write(f"{email}\n")
+            return len(emails)
     
     def export_crypto(self, filepath: str) -> int:
-        """Exporte les adresses crypto."""
+        """Export crypto."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
-                SELECT domain, cryptos FROM intel 
-                WHERE cryptos != '{}' AND status = 200
+                SELECT entity_type, value FROM entities 
+                WHERE entity_type LIKE 'crypto_%'
             """)
             
             crypto_data = {}
-            
             for row in cursor.fetchall():
-                cryptos = json.loads(row[1]) if row[1] else {}
-                for coin, addresses in cryptos.items():
-                    if coin not in crypto_data:
-                        crypto_data[coin] = set()
-                    for addr in addresses:
-                        crypto_data[coin].add(addr)
+                coin = row[0].replace('crypto_', '').upper()
+                if coin not in crypto_data:
+                    crypto_data[coin] = set()
+                crypto_data[coin].add(row[1])
             
+            total = 0
             with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(f"# Crypto Addresses - {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n")
-                
-                total = 0
-                for coin, addresses in sorted(crypto_data.items()):
-                    if addresses:
-                        f.write(f"\n## {coin} ({len(addresses)})\n")
-                        for addr in sorted(addresses):
-                            f.write(f"{addr}\n")
-                        total += len(addresses)
-            
+                f.write(f"# Crypto - {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n")
+                for coin, addrs in sorted(crypto_data.items()):
+                    f.write(f"\n## {coin} ({len(addrs)})\n")
+                    for addr in sorted(addrs):
+                        f.write(f"{addr}\n")
+                    total += len(addrs)
             return total
     
-    def get_high_risk_sites(self, min_score: int = 50, limit: int = 50) -> List[Dict]:
-        """Recupere les sites a haut risque."""
-        with self._get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.execute("""
-                SELECT url, domain, title, risk_score, cryptos, emails, secrets_found
-                FROM intel WHERE status = 200 AND risk_score >= ?
-                ORDER BY risk_score DESC LIMIT ?
-            """, (min_score, limit))
-            
-            results = []
-            for row in cursor.fetchall():
-                data = dict(row)
-                data['cryptos'] = json.loads(data['cryptos']) if data['cryptos'] else {}
-                data['emails'] = json.loads(data['emails']) if data['emails'] else []
-                data['secrets_found'] = json.loads(data['secrets_found']) if data['secrets_found'] else {}
-                results.append(data)
-            return results
-    
     def get_timeline_stats(self, days: int = 7) -> List[Dict]:
-        """Statistiques par jour."""
+        """Stats par jour."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
-                SELECT 
-                    DATE(found_at) as date,
-                    COUNT(*) as total,
-                    SUM(CASE WHEN status = 200 THEN 1 ELSE 0 END) as success,
-                    COUNT(DISTINCT domain) as domains
-                FROM intel
-                WHERE found_at >= DATE('now', ?)
-                GROUP BY DATE(found_at)
-                ORDER BY date DESC
+                SELECT DATE(found_at) as date, COUNT(*) as total,
+                       SUM(CASE WHEN status = 200 THEN 1 ELSE 0 END) as success,
+                       COUNT(DISTINCT domain) as domains
+                FROM intel WHERE found_at >= DATE('now', ?)
+                GROUP BY DATE(found_at) ORDER BY date DESC
             """, (f'-{days} days',))
-            
-            return [{'date': r[0], 'total': r[1], 'success': r[2], 'domains': r[3]} 
-                   for r in cursor.fetchall()]
+            return [{'date': r[0], 'total': r[1], 'success': r[2], 'domains': r[3]} for r in cursor.fetchall()]
     
     def get_pending_urls(self, limit: int = 1000) -> List[tuple]:
-        """Retourne les URLs en attente."""
+        """URLs en attente."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
-                SELECT url, depth FROM intel 
-                WHERE status = 0 OR status >= 400
-                ORDER BY depth ASC, found_at DESC
-                LIMIT ?
+                SELECT url, depth FROM intel WHERE status = 0 OR status >= 400
+                ORDER BY priority_score DESC, depth ASC LIMIT ?
             """, (limit,))
             return cursor.fetchall()
     
+    def get_high_risk_sites(self, min_score: int = 50, limit: int = 50) -> List[Dict]:
+        """Sites haut risque."""
+        results, _ = self.search_fulltext('', {'min_risk': min_score}, limit)
+        return results
+    
     def get_successful_urls_for_recrawl(self, min_depth: int = 0) -> List[str]:
-        """Retourne les URLs reussies pour extraire de nouveaux liens."""
+        """URLs pour recrawl."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
-                SELECT url FROM intel 
-                WHERE status = 200 AND depth >= ?
-                ORDER BY found_at DESC
-                LIMIT 500
+                SELECT url FROM intel WHERE status = 200 AND depth >= ?
+                ORDER BY found_at DESC LIMIT 500
             """, (min_depth,))
             return [row[0] for row in cursor.fetchall()]
+    
+    # ========== MAINTENANCE ==========
+    
+    def purge_old_data(self, days: int = 30, anonymize: bool = False):
+        """Purge les donnees anciennes."""
+        with self._get_connection() as conn:
+            if anonymize:
+                conn.execute("""
+                    UPDATE intel SET 
+                        emails = '[]', secrets_found = '{}', ip_leaks = '[]',
+                        content_text = ''
+                    WHERE found_at < datetime('now', ?)
+                """, (f'-{days} days',))
+            else:
+                conn.execute("DELETE FROM intel WHERE found_at < datetime('now', ?)", (f'-{days} days',))
+                conn.execute("DELETE FROM alerts WHERE created_at < datetime('now', ?)", (f'-{days} days',))
+                conn.execute("DELETE FROM entities WHERE last_seen < datetime('now', ?)", (f'-{days} days',))
+    
+    def vacuum(self):
+        """Optimise la base."""
+        with self._get_connection() as conn:
+            conn.execute("VACUUM")

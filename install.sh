@@ -11,6 +11,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+PURPLE='\033[0;35m'
 NC='\033[0m'
 
 echo -e "${CYAN}"
@@ -28,6 +29,43 @@ fi
 
 # Repertoire d'installation
 INSTALL_DIR="$HOME/crawler-onion"
+SERVICE_NAME="crawler-onion"
+
+# Options
+INSTALL_DAEMON=false
+WEB_PORT=4587
+WORKERS=15
+
+# Parser les arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --daemon)
+            INSTALL_DAEMON=true
+            shift
+            ;;
+        --port)
+            WEB_PORT="$2"
+            shift 2
+            ;;
+        --workers)
+            WORKERS="$2"
+            shift 2
+            ;;
+        --help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --daemon     Installer comme service systemd"
+            echo "  --port NUM   Port du serveur web (defaut: 4587)"
+            echo "  --workers N  Nombre de workers (defaut: 15)"
+            echo "  --help       Afficher cette aide"
+            exit 0
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 echo -e "${GREEN}[1/6]${NC} Mise a jour du systeme..."
 sudo apt update -qq
@@ -81,6 +119,60 @@ if ! grep -q "alias crawler=" "$HOME/.bashrc" 2>/dev/null; then
     echo "$ALIAS_LINE" >> "$HOME/.bashrc"
 fi
 
+# Installation du daemon si demande
+if [ "$INSTALL_DAEMON" = true ]; then
+    echo ""
+    echo -e "${PURPLE}[DAEMON]${NC} Installation du service systemd..."
+    
+    # Creer le fichier service
+    SERVICE_FILE="/tmp/${SERVICE_NAME}.service"
+    cat > "$SERVICE_FILE" << EOF
+[Unit]
+Description=Darknet Omniscient Crawler - Tor .onion Crawler
+Documentation=https://github.com/ahottois/crawler-onion
+After=network.target tor.service
+Wants=tor.service
+
+[Service]
+Type=simple
+User=$USER
+Group=$USER
+WorkingDirectory=$INSTALL_DIR
+Environment="PATH=$INSTALL_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=$INSTALL_DIR/venv/bin/python $INSTALL_DIR/run.py --workers $WORKERS --web-port $WEB_PORT
+ExecReload=/bin/kill -HUP \$MAINPID
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=$SERVICE_NAME
+
+# Securite
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Installer le service
+    sudo cp "$SERVICE_FILE" "/etc/systemd/system/${SERVICE_NAME}.service"
+    rm "$SERVICE_FILE"
+    
+    # Activer et demarrer
+    sudo systemctl daemon-reload
+    sudo systemctl enable "$SERVICE_NAME"
+    sudo systemctl start "$SERVICE_NAME"
+    
+    sleep 2
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo -e "${GREEN}OK${NC} Service $SERVICE_NAME demarre"
+    else
+        echo -e "${YELLOW}ATTENTION${NC} Le service n'a pas demarre correctement"
+        echo "Verifiez avec: sudo journalctl -u $SERVICE_NAME -f"
+    fi
+fi
+
 echo ""
 echo -e "${GREEN}=================================================="
 echo -e "         Installation terminee !"
@@ -88,12 +180,27 @@ echo -e "==================================================${NC}"
 echo ""
 echo -e "Installe dans: ${CYAN}$INSTALL_DIR${NC}"
 echo ""
-echo -e "${YELLOW}Pour lancer le crawler:${NC}"
-echo -e "  ${CYAN}cd $INSTALL_DIR && ./start.sh${NC}"
-echo ""
-echo -e "${YELLOW}Ou apres avoir recharge le terminal:${NC}"
-echo -e "  ${CYAN}source ~/.bashrc${NC}"
-echo -e "  ${CYAN}crawler${NC}"
+
+if [ "$INSTALL_DAEMON" = true ]; then
+    echo -e "${PURPLE}Mode Daemon active${NC}"
+    echo ""
+    echo -e "${YELLOW}Commandes de controle:${NC}"
+    echo -e "  ${CYAN}sudo systemctl status $SERVICE_NAME${NC}   Statut"
+    echo -e "  ${CYAN}sudo systemctl restart $SERVICE_NAME${NC}  Redemarrer"
+    echo -e "  ${CYAN}sudo systemctl stop $SERVICE_NAME${NC}     Arreter"
+    echo -e "  ${CYAN}sudo journalctl -u $SERVICE_NAME -f${NC}   Logs"
+else
+    echo -e "${YELLOW}Pour lancer le crawler:${NC}"
+    echo -e "  ${CYAN}cd $INSTALL_DIR && ./start.sh${NC}"
+    echo ""
+    echo -e "${YELLOW}Ou apres avoir recharge le terminal:${NC}"
+    echo -e "  ${CYAN}source ~/.bashrc${NC}"
+    echo -e "  ${CYAN}crawler${NC}"
+    echo ""
+    echo -e "${YELLOW}Pour installer comme daemon:${NC}"
+    echo -e "  ${CYAN}curl -sSL https://raw.githubusercontent.com/ahottois/crawler-onion/master/install.sh | bash -s -- --daemon${NC}"
+fi
+
 echo ""
 echo -e "${YELLOW}Options disponibles:${NC}"
 echo -e "  ${CYAN}crawler --help${NC}           Afficher l'aide"
@@ -101,5 +208,5 @@ echo -e "  ${CYAN}crawler --workers 20${NC}     20 workers paralleles"
 echo -e "  ${CYAN}crawler --no-web${NC}         Sans interface web"
 echo ""
 echo -e "${YELLOW}Interface web:${NC}"
-echo -e "  ${CYAN}http://VOTRE_IP:4587${NC}"
+echo -e "  ${CYAN}http://VOTRE_IP:$WEB_PORT${NC}"
 echo ""

@@ -15,6 +15,7 @@ from urllib.parse import urlparse, parse_qs
 
 from .logger import Log
 from .updater import Updater
+from .daemon import DaemonManager
 
 
 class CrawlerWebServer:
@@ -42,6 +43,9 @@ class CrawlerWebServer:
                 repo_name="crawler-onion",
                 current_version="6.4.0"
             )
+        
+        # Initialiser le gestionnaire de daemon
+        self.daemon = DaemonManager()
     
     def _get_data(self) -> Dict[str, Any]:
         """Recupere les donnees depuis la base."""
@@ -246,6 +250,35 @@ class CrawlerWebServer:
         """Execute la mise a jour."""
         return self.updater.perform_update()
     
+    def _get_daemon_status(self) -> Dict[str, Any]:
+        """Recupere le statut du daemon."""
+        return self.daemon.get_full_status()
+    
+    def _install_daemon(self, data: Dict) -> Dict[str, Any]:
+        """Installe le daemon systemd."""
+        web_port = data.get('web_port', self.port)
+        workers = data.get('workers', 15)
+        return self.daemon.install(web_port=web_port, workers=workers)
+    
+    def _uninstall_daemon(self) -> Dict[str, Any]:
+        """Desinstalle le daemon systemd."""
+        return self.daemon.uninstall()
+    
+    def _control_daemon(self, action: str) -> Dict[str, Any]:
+        """Controle le daemon (start/stop/restart)."""
+        if action == 'start':
+            return self.daemon.start()
+        elif action == 'stop':
+            return self.daemon.stop()
+        elif action == 'restart':
+            return self.daemon.restart()
+        else:
+            return {'success': False, 'message': 'Action inconnue'}
+    
+    def _get_daemon_logs(self, lines: int = 50) -> Dict[str, Any]:
+        """Recupere les logs du daemon."""
+        return self.daemon.get_logs(lines)
+    
     def _create_handler(self):
         """Cree le handler HTTP."""
         server_instance = self
@@ -272,6 +305,11 @@ class CrawlerWebServer:
                     self._send_json(server_instance._get_data())
                 elif path == '/api/update-status':
                     self._send_json(server_instance._get_update_status())
+                elif path == '/api/daemon-status':
+                    self._send_json(server_instance._get_daemon_status())
+                elif path == '/api/daemon-logs':
+                    lines = int(params.get('lines', ['50'])[0])
+                    self._send_json(server_instance._get_daemon_logs(lines))
                 else:
                     self.send_response(404)
                     self.end_headers()
@@ -290,6 +328,12 @@ class CrawlerWebServer:
                     result = server_instance._perform_update()
                 elif self.path == '/api/check-updates':
                     result = server_instance._get_update_status()
+                elif self.path == '/api/daemon-install':
+                    result = server_instance._install_daemon(data)
+                elif self.path == '/api/daemon-uninstall':
+                    result = server_instance._uninstall_daemon()
+                elif self.path == '/api/daemon-control':
+                    result = server_instance._control_daemon(data.get('action', ''))
                 else:
                     self.send_response(404)
                     self.end_headers()
@@ -350,6 +394,8 @@ class CrawlerWebServer:
         return render_trusted(self._get_trusted_sites(), self.port)
     
     def _render_updates(self) -> str:
-        """Genere la page des mises a jour."""
+        """Genere la page des mises a jour et daemon."""
         from .web_templates import render_updates
-        return render_updates(self._get_update_status(), self.port)
+        update_status = self._get_update_status()
+        daemon_status = self._get_daemon_status()
+        return render_updates(update_status, daemon_status, self.port)

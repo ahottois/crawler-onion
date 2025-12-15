@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Dict, List, Any
 
 
-# Template HTML principal
+# Template HTML principal avec scripts daemon ajoutes
 HTML_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -35,7 +35,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .stat-card.warning .value {{ color: #ffaa00; }}
         .stat-card.info .value {{ color: #00aaff; }}
         .section {{ background: #111; border: 1px solid #333; margin-bottom: 20px; border-radius: 5px; }}
-        .section-header {{ background: #1a1a1a; padding: 12px 15px; border-bottom: 1px solid #333; font-weight: bold; }}
+        .section-header {{ background: #1a1a1a; padding: 12px 15px; border-bottom: 1px solid #333; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }}
         .section-content {{ padding: 15px; max-height: 350px; overflow-y: auto; }}
         table {{ width: 100%; border-collapse: collapse; }}
         th, td {{ padding: 8px 10px; text-align: left; border-bottom: 1px solid #222; font-size: 13px; }}
@@ -46,7 +46,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .tag-crypto {{ background: #9933ff; color: #fff; }}
         .tag-social {{ background: #00aaff; color: #fff; }}
         .tag-email {{ background: #ffaa00; color: #000; }}
-        .tag-update {{ background: #ff4444; color: #fff; animation: pulse 2s infinite; }}
         .url {{ color: #00ff00; word-break: break-all; font-size: 12px; }}
         .domain {{ color: #888; }}
         .title {{ color: #fff; }}
@@ -56,17 +55,21 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         @keyframes blink {{ 50% {{ opacity: 0.5; }} }}
         .control-panel {{ background: #111; border: 1px solid #00ff00; border-radius: 5px; padding: 15px; margin-bottom: 20px; }}
         .control-panel h2 {{ color: #00ff00; margin-bottom: 12px; font-size: 14px; }}
+        .control-panel.daemon {{ border-color: #9933ff; }}
+        .control-panel.daemon h2 {{ color: #9933ff; }}
         .form-row {{ display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }}
         .form-group {{ flex: 1; min-width: 200px; margin-bottom: 10px; }}
         .form-group label {{ display: block; color: #888; margin-bottom: 5px; font-size: 11px; }}
         .form-group input, .form-group textarea, .form-group select {{ width: 100%; padding: 8px; background: #0a0a0a; border: 1px solid #333; color: #00ff00; font-family: 'Courier New', monospace; border-radius: 3px; font-size: 12px; }}
         .form-group textarea {{ height: 60px; resize: vertical; }}
-        .btn {{ padding: 8px 15px; border: none; border-radius: 3px; cursor: pointer; font-family: 'Courier New', monospace; font-weight: bold; font-size: 12px; margin-right: 5px; }}
+        .btn {{ padding: 8px 15px; border: none; border-radius: 3px; cursor: pointer; font-family: 'Courier New', monospace; font-weight: bold; font-size: 12px; margin-right: 5px; margin-bottom: 5px; }}
         .btn-primary {{ background: #00ff00; color: #000; }}
         .btn-primary:hover {{ background: #00cc00; }}
         .btn-warning {{ background: #ffaa00; color: #000; }}
         .btn-danger {{ background: #ff4444; color: #fff; }}
         .btn-danger:hover {{ background: #cc3333; }}
+        .btn-purple {{ background: #9933ff; color: #fff; }}
+        .btn-purple:hover {{ background: #7722cc; }}
         .btn-small {{ padding: 4px 8px; font-size: 10px; }}
         .btn-copy {{ background: #333; color: #00ff00; border: 1px solid #00ff00; }}
         .btn:disabled {{ opacity: 0.5; cursor: not-allowed; }}
@@ -85,9 +88,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .search-result-meta {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }}
         .refresh-info {{ text-align: center; color: #444; margin-bottom: 15px; font-size: 12px; }}
         .update-banner {{ background: linear-gradient(90deg, #ff4444, #ff6666); color: #fff; padding: 10px 20px; border-radius: 5px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }}
-        .update-banner.hidden {{ display: none; }}
-        .version-badge {{ background: #00ff00; color: #000; padding: 2px 8px; border-radius: 3px; font-size: 11px; }}
-        .version-badge.new {{ background: #ff4444; color: #fff; }}
         .changelog {{ background: #0a0a0a; border: 1px solid #333; border-radius: 5px; padding: 15px; margin-top: 15px; white-space: pre-wrap; font-size: 12px; color: #888; max-height: 200px; overflow-y: auto; }}
         .commit-list {{ list-style: none; }}
         .commit-list li {{ padding: 8px 0; border-bottom: 1px solid #222; }}
@@ -96,6 +96,14 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .commit-date {{ color: #666; font-size: 11px; }}
         .loading {{ display: inline-block; width: 20px; height: 20px; border: 2px solid #333; border-top-color: #00ff00; border-radius: 50%; animation: spin 1s linear infinite; }}
         @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+        .daemon-status {{ display: inline-block; padding: 4px 12px; border-radius: 15px; font-size: 12px; font-weight: bold; }}
+        .daemon-status.active {{ background: #00ff00; color: #000; }}
+        .daemon-status.inactive {{ background: #ff4444; color: #fff; }}
+        .daemon-status.not-installed {{ background: #666; color: #fff; }}
+        .log-viewer {{ background: #000; border: 1px solid #333; border-radius: 5px; padding: 15px; font-family: monospace; font-size: 11px; color: #00ff00; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }}
+        .info-box {{ background: #1a1a2a; border: 1px solid #9933ff; border-radius: 5px; padding: 15px; margin-bottom: 15px; }}
+        .info-box p {{ color: #888; font-size: 12px; margin-bottom: 8px; }}
+        .info-box code {{ background: #0a0a0a; padding: 2px 6px; border-radius: 3px; color: #00ff00; }}
     </style>
 </head>
 <body>
@@ -105,30 +113,22 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <a href="/" class="nav-tab {nav_dashboard}">Dashboard</a>
             <a href="/search" class="nav-tab {nav_search}">Recherche</a>
             <a href="/trusted" class="nav-tab {nav_trusted}">Sites Fiables</a>
-            <a href="/updates" class="nav-tab {nav_updates}">Mises a jour</a>
+            <a href="/updates" class="nav-tab {nav_updates}">Systeme</a>
         </div>
         {update_banner}
         {page_content}
         <div class="footer">Darknet Omniscient Crawler v{version} | Port {port}</div>
     </div>
     <script>
-        function copyToClipboard(text) {{
-            navigator.clipboard.writeText(text);
-        }}
+        function copyToClipboard(text) {{ navigator.clipboard.writeText(text); }}
         function showMessage(text, type) {{
             const msg = document.getElementById('message');
-            if (msg) {{
-                msg.textContent = text;
-                msg.className = 'message ' + type;
-                setTimeout(() => {{ msg.className = 'message'; }}, 5000);
-            }}
+            if (msg) {{ msg.textContent = text; msg.className = 'message ' + type; setTimeout(() => {{ msg.className = 'message'; }}, 5000); }}
         }}
         function addSeeds() {{
             const urls = document.getElementById('seedUrls').value.trim().split('\\n').filter(u => u.trim());
             if (urls.length === 0) {{ showMessage('Entrez au moins une URL', 'error'); return; }}
-            fetch('/api/add-seeds', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
+            fetch('/api/add-seeds', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }},
                 body: JSON.stringify({{ urls: urls }})
             }})
             .then(r => r.json())
@@ -164,32 +164,61 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             }})
             .catch(e => {{
                 if (btn) btn.disabled = false;
-                if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur de connexion</span>';
+                if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur</span>';
             }});
         }}
         function performUpdate() {{
-            if (!confirm('Voulez-vous vraiment mettre a jour? Le crawler sera redemarrer.')) return;
+            if (!confirm('Mettre a jour maintenant?')) return;
             
             const btn = document.getElementById('updateBtn');
             const status = document.getElementById('updateResult');
             if (btn) btn.disabled = true;
-            if (status) status.innerHTML = '<span class="loading"></span> Mise a jour en cours...';
+            if (status) status.innerHTML = '<span class="loading"></span> Mise a jour...';
             
             fetch('/api/perform-update', {{ method: 'POST' }})
             .then(r => r.json())
             .then(data => {{
                 if (btn) btn.disabled = false;
-                if (status) {{
-                    if (data.success) {{
-                        status.innerHTML = '<span style="color: #00ff00;">' + data.message + '</span><br><pre style="color: #888; font-size: 11px;">' + (data.details || '') + '</pre><br><strong>Redemarrez le crawler pour appliquer les changements.</strong>';
-                    }} else {{
-                        status.innerHTML = '<span style="color: #ff4444;">' + data.message + '</span><br><pre style="color: #888; font-size: 11px;">' + (data.details || '') + '</pre>';
-                    }}
-                }}
+                if (status) {{ status.innerHTML = '<span style="color: ' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span><pre style="color: #888; font-size: 11px;">' + (data.details || '') + '</pre>'; }}
             }})
-            .catch(e => {{
+            .catch(e => {{ if (btn) btn.disabled = false; if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur</span>'; }});
+        }}
+        function installDaemon() {{
+            const port = document.getElementById('daemonPort').value || 4587;
+            const workers = document.getElementById('daemonWorkers').value || 15;
+            if (!confirm('Installer le crawler comme service systemd?\\n\\nPort: ' + port + '\\nWorkers: ' + workers)) return;
+            const btn = document.getElementById('installDaemonBtn'); const status = document.getElementById('daemonResult');
+            if (btn) btn.disabled = true; if (status) status.innerHTML = '<span class="loading"></span> Installation...';
+            fetch('/api/daemon-install', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify({{ web_port: parseInt(port), workers: parseInt(workers) }}) }})
+            .then(r => r.json()).then(data => {{
                 if (btn) btn.disabled = false;
-                if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur de connexion</span>';
+                if (status) {{ status.innerHTML = '<span style="color: ' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span><br><pre style="color: #888; font-size: 11px;">' + (data.details || '') + '</pre>'; }}
+                if (data.success) setTimeout(() => location.reload(), 2000);
+            }}).catch(e => {{ if (btn) btn.disabled = false; if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur</span>'; }});
+        }}
+        function uninstallDaemon() {{
+            if (!confirm('Desinstaller le service systemd?')) return;
+            const status = document.getElementById('daemonResult');
+            if (status) status.innerHTML = '<span class="loading"></span> Desinstallation...';
+            fetch('/api/daemon-uninstall', {{ method: 'POST' }}).then(r => r.json()).then(data => {{
+                if (status) {{ status.innerHTML = '<span style="color: ' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>'; }}
+                if (data.success) setTimeout(() => location.reload(), 2000);
+            }}).catch(e => {{ if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur</span>'; }});
+        }}
+        function controlDaemon(action) {{
+            const status = document.getElementById('daemonResult');
+            if (status) status.innerHTML = '<span class="loading"></span> ' + action + '...';
+            fetch('/api/daemon-control', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify({{ action: action }}) }})
+            .then(r => r.json()).then(data => {{
+                if (status) {{ status.innerHTML = '<span style="color: ' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>'; }}
+                setTimeout(() => location.reload(), 1500);
+            }}).catch(e => {{ if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur</span>'; }});
+        }}
+        function refreshLogs() {{
+            const logViewer = document.getElementById('daemonLogs');
+            if (!logViewer) return;
+            fetch('/api/daemon-logs?lines=50').then(r => r.json()).then(data => {{
+                if (data.logs) logViewer.textContent = data.logs;
             }});
         }}
         if (window.location.pathname === '/') setTimeout(() => location.reload(), 30000);
@@ -202,14 +231,8 @@ def _get_update_banner(update_status: Dict[str, Any]) -> str:
     """Genere la banniere de mise a jour si disponible."""
     if not update_status or not update_status.get('update_available'):
         return ''
-    
     latest = update_status.get('latest_version', '?')
-    return f'''
-    <div class="update-banner">
-        <span>Nouvelle version disponible: <strong>v{html.escape(str(latest))}</strong></span>
-        <a href="/updates" class="btn btn-primary">Voir les mises a jour</a>
-    </div>
-    '''
+    return f'''<div class="update-banner"><span>Nouvelle version disponible: <strong>v{html.escape(str(latest))}</strong></span><a href="/updates" class="btn btn-primary">Voir</a></div>'''
 
 
 def render_dashboard(data: Dict[str, Any], port: int, update_status: Dict[str, Any] = None) -> str:
@@ -218,7 +241,6 @@ def render_dashboard(data: Dict[str, Any], port: int, update_status: Dict[str, A
     update_banner = _get_update_banner(update_status)
     nav_updates_class = 'update-available' if update_status and update_status.get('update_available') else ''
     
-    # Intel rows
     intel_rows_html = ""
     for row in data['intel_rows']:
         tags = []
@@ -250,8 +272,7 @@ def render_dashboard(data: Dict[str, Any], port: int, update_status: Dict[str, A
         <div class="stat-card warning"><h3>EN QUEUE</h3><div class="value">{data["queue_size"]}</div></div>
         <div class="stat-card alert"><h3>INTEL</h3><div class="value">{data["intel_count"]}</div></div>
     </div>
-    <div class="control-panel">
-        <h2>Ajouter des Sites a Explorer</h2>
+    <div class="control-panel"><h2>Ajouter des Sites a Explorer</h2>
         <div class="form-row">
             <div class="form-group" style="flex: 2;"><label>URLs .onion (une par ligne)</label><textarea id="seedUrls" placeholder="http://exemple.onion/"></textarea></div>
             <div class="form-group" style="flex: 1;"><button class="btn btn-primary" onclick="addSeeds()">Ajouter</button><button class="btn btn-warning" onclick="refreshLinks()">Extraire liens</button></div>
@@ -267,14 +288,10 @@ def render_dashboard(data: Dict[str, Any], port: int, update_status: Dict[str, A
         <div class="stat-card"><h3>Emails</h3><div class="value" style="font-size: 24px;">{data["total_emails"]}</div></div>
         <div class="stat-card"><h3>Crypto</h3><div class="value" style="font-size: 24px;">{data["total_cryptos"]}</div></div>
         <div class="stat-card"><h3>Social</h3><div class="value" style="font-size: 24px;">{data["total_socials"]}</div></div>
-    </div>
-    '''
+    </div>'''
     
-    return HTML_TEMPLATE.format(
-        page_content=page_content, port=port, version=version,
-        update_banner=update_banner,
-        nav_dashboard='active', nav_search='', nav_trusted='', nav_updates=nav_updates_class
-    )
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner=update_banner,
+        nav_dashboard='active', nav_search='', nav_trusted='', nav_updates=nav_updates_class)
 
 
 def render_search(results: List[Dict], query: str, filter_type: str, port: int, update_status: Dict[str, Any] = None) -> str:
@@ -292,57 +309,23 @@ def render_search(results: List[Dict], query: str, filter_type: str, port: int, 
             if r.get('socials', '{}') != '{}': tags.append('<span class="tag tag-social">SOCIAL</span>')
             if r.get('emails', '[]') != '[]': tags.append(f'<span class="tag tag-email">{len(json.loads(r["emails"]))} emails</span>')
         except: pass
-        
-        search_results_html += f'''
-        <div class="search-result">
-            <div class="search-result-title">{html.escape(str(r.get("title", "Sans titre"))[:100])}</div>
-            <div class="search-result-url">{html.escape(str(r.get("url", ""))[:100])}</div>
-            <div class="search-result-meta">
-                <span class="domain">{html.escape(str(r.get("domain", ""))[:40])}</span>
-                {"".join(tags)}
-                <button class="btn btn-copy btn-small" onclick="copyToClipboard('{html.escape(r.get("url", ""))}')">Copier</button>
-            </div>
-        </div>'''
+        search_results_html += f'''<div class="search-result"><div class="search-result-title">{html.escape(str(r.get("title", "Sans titre"))[:100])}</div><div class="search-result-url">{html.escape(str(r.get("url", ""))[:100])}</div><div class="search-result-meta"><span class="domain">{html.escape(str(r.get("domain", ""))[:40])}</span>{"".join(tags)}<button class="btn btn-copy btn-small" onclick="copyToClipboard('{html.escape(r.get("url", ""))}')">Copier</button></div></div>'''
     
     if not search_results_html:
         search_results_html = '<div style="color: #888; text-align: center; padding: 40px;">Entrez une recherche ou selectionnez un filtre</div>'
     
     page_content = f'''
-    <div class="control-panel">
-        <h2>Rechercher dans la Base de Donnees</h2>
-        <form method="GET" action="/search">
-            <div class="form-row">
-                <div class="form-group" style="flex: 3;">
-                    <label>Recherche (titre, domaine, URL)</label>
-                    <input type="text" name="q" value="{html.escape(query)}" placeholder="Entrez votre recherche...">
-                </div>
-                <div class="form-group" style="flex: 1;">
-                    <label>Filtrer par</label>
-                    <select name="filter">
-                        <option value="all" {'selected' if filter_type == 'all' else ''}>Tout</option>
-                        <option value="crypto" {'selected' if filter_type == 'crypto' else ''}>Crypto</option>
-                        <option value="social" {'selected' if filter_type == 'social' else ''}>Social</option>
-                        <option value="email" {'selected' if filter_type == 'email' else ''}>Emails</option>
-                        <option value="secret" {'selected' if filter_type == 'secret' else ''}>Secrets</option>
-                    </select>
-                </div>
-                <div class="form-group" style="flex: 0;">
-                    <button type="submit" class="btn btn-primary">Rechercher</button>
-                </div>
-            </div>
-        </form>
+    <div class="control-panel"><h2>Rechercher dans la Base de Donnees</h2>
+        <form method="GET" action="/search"><div class="form-row">
+            <div class="form-group" style="flex: 3;"><label>Recherche (titre, domaine, URL)</label><input type="text" name="q" value="{html.escape(query)}" placeholder="Entrez votre recherche..."></div>
+            <div class="form-group" style="flex: 1;"><label>Filtrer par</label><select name="filter"><option value="all" {'selected' if filter_type == 'all' else ''}>Tout</option><option value="crypto" {'selected' if filter_type == 'crypto' else ''}>Crypto</option><option value="social" {'selected' if filter_type == 'social' else ''}>Social</option><option value="email" {'selected' if filter_type == 'email' else ''}>Emails</option><option value="secret" {'selected' if filter_type == 'secret' else ''}>Secrets</option></select></div>
+            <div class="form-group" style="flex: 0;"><button type="submit" class="btn btn-primary">Rechercher</button></div>
+        </div></form>
     </div>
-    <div class="section">
-        <div class="section-header">Resultats ({len(results)})</div>
-        <div class="section-content" style="max-height: none;">{search_results_html}</div>
-    </div>
-    '''
+    <div class="section"><div class="section-header">Resultats ({len(results)})</div><div class="section-content" style="max-height: none;">{search_results_html}</div></div>'''
     
-    return HTML_TEMPLATE.format(
-        page_content=page_content, port=port, version=version,
-        update_banner='',
-        nav_dashboard='', nav_search='active', nav_trusted='', nav_updates=nav_updates_class
-    )
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='active', nav_trusted='', nav_updates=nav_updates_class)
 
 
 def render_trusted(data: Dict[str, Any], port: int, update_status: Dict[str, Any] = None) -> str:
@@ -353,20 +336,7 @@ def render_trusted(data: Dict[str, Any], port: int, update_status: Dict[str, Any
     trusted_html = ""
     for site in data['sites'][:12]:
         trust_class = f"trust-{site['trust_level']}"
-        trusted_html += f'''
-        <div class="search-result">
-            <div class="search-result-title">
-                <span class="trust-score {trust_class}">{site["score"]}</span>
-                {html.escape(str(site.get("domain", ""))[:50])}
-            </div>
-            <div class="search-result-url">{html.escape(str(site.get("title", ""))[:80])}</div>
-            <div class="search-result-meta">
-                <span>{site["total_pages"]} pages</span>
-                <span style="color: #00ff00">{site["success_rate"]}% succes</span>
-                {"<span class='tag tag-secret'>INTEL</span>" if site["has_intel"] else ""}
-                <button class="btn btn-copy btn-small" onclick="copyToClipboard('http://{html.escape(site.get("domain", ""))}/')">Copier</button>
-            </div>
-        </div>'''
+        trusted_html += f'''<div class="search-result"><div class="search-result-title"><span class="trust-score {trust_class}">{site["score"]}</span> {html.escape(str(site.get("domain", ""))[:50])}</div><div class="search-result-url">{html.escape(str(site.get("title", ""))[:80])}</div><div class="search-result-meta"><span>{site["total_pages"]} pages</span><span style="color: #00ff00">{site["success_rate"]}% succes</span>{"<span class='tag tag-secret'>INTEL</span>" if site["has_intel"] else ""}<button class="btn btn-copy btn-small" onclick="copyToClipboard('http://{html.escape(site.get("domain", ""))}/')">Copier</button></div></div>'''
     
     domain_table_html = ""
     for site in data['sites']:
@@ -380,90 +350,119 @@ def render_trusted(data: Dict[str, Any], port: int, update_status: Dict[str, Any
         <div class="stat-card warning"><h3>CONFIANCE MOYENNE</h3><div class="value">{data['medium_trust']}</div></div>
         <div class="stat-card alert"><h3>FAIBLE CONFIANCE</h3><div class="value">{data['low_trust']}</div></div>
     </div>
-    <div class="section">
-        <div class="section-header">Sites les Plus Fiables</div>
-        <div class="section-content" style="max-height: none;">
-            <p style="color: #888; margin-bottom: 15px; font-size: 12px;">Score calcule selon: pages crawlees, taux de succes, presence de donnees structurees.</p>
-            {trusted_html or '<div style="color:#888;">Aucun site analyse</div>'}
-        </div>
-    </div>
-    <div class="section">
-        <div class="section-header">Tous les Domaines Classes</div>
-        <div class="section-content" style="max-height: 500px;">
-            <table>
-                <thead><tr><th>Domaine</th><th>Score</th><th>Pages</th><th>Succes</th><th>Intel</th></tr></thead>
-                <tbody>{domain_table_html or '<tr><td colspan="5">Aucune donnee</td></tr>'}</tbody>
-            </table>
-        </div>
-    </div>
-    '''
+    <div class="section"><div class="section-header">Sites les Plus Fiables</div><div class="section-content" style="max-height: none;"><p style="color: #888; margin-bottom: 15px; font-size: 12px;">Score calcule selon: pages crawlees, taux de succes, presence de donnees structurees.</p>{trusted_html or '<div style="color:#888;">Aucun site analyse</div>'}</div></div>
+    <div class="section"><div class="section-header">Tous les Domaines Classes</div><div class="section-content" style="max-height: 500px;"><table><thead><tr><th>Domaine</th><th>Score</th><th>Pages</th><th>Succes</th><th>Intel</th></tr></thead><tbody>{domain_table_html or '<tr><td colspan="5">Aucune donnee</td></tr>'}</tbody></table></div></div>'''
     
-    return HTML_TEMPLATE.format(
-        page_content=page_content, port=port, version=version,
-        update_banner='',
-        nav_dashboard='', nav_search='', nav_trusted='active', nav_updates=nav_updates_class
-    )
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='active', nav_updates=nav_updates_class)
 
 
-def render_updates(update_status: Dict[str, Any], port: int) -> str:
-    """Genere la page des mises a jour."""
+def render_updates(update_status: Dict[str, Any], daemon_status: Dict[str, Any], port: int) -> str:
+    """Genere la page systeme (mises a jour + daemon)."""
     version = update_status.get('current_version', '6.4.0')
     latest = update_status.get('latest_version', 'N/A')
     update_available = update_status.get('update_available', False)
     changelog = update_status.get('changelog', '')
     recent_commits = update_status.get('recent_commits', [])
-    error = update_status.get('error')
     
-    # Commits recents
-    commits_html = ""
-    for commit in recent_commits:
-        commits_html += f'''
-        <li>
-            <span class="commit-sha">{html.escape(commit.get('sha', ''))}</span>
-            <span class="commit-date">{html.escape(commit.get('date', '')[:10])}</span>
-            <br>{html.escape(commit.get('message', ''))}
-        </li>'''
+    # Daemon status
+    daemon_installed = daemon_status.get('installed', False)
+    daemon_active = daemon_status.get('active', False)
+    daemon_enabled = daemon_status.get('enabled', False)
+    systemd_available = daemon_status.get('systemd_available', False)
+    daemon_logs = daemon_status.get('recent_logs', '')
     
-    if not commits_html:
-        commits_html = '<li style="color: #888;">Aucun commit disponible</li>'
-    
-    # Status
-    if error:
-        status_html = f'<div class="stat-card alert"><h3>ERREUR</h3><div class="value" style="font-size: 14px;">{html.escape(error)}</div></div>'
-    elif update_available:
-        status_html = f'''
-        <div class="stat-card alert">
-            <h3>MISE A JOUR DISPONIBLE</h3>
-            <div class="value">v{html.escape(str(latest))}</div>
-        </div>'''
+    # Daemon status badge
+    if not systemd_available:
+        daemon_badge = '<span class="daemon-status not-installed">Systemd non disponible</span>'
+    elif not daemon_installed:
+        daemon_badge = '<span class="daemon-status not-installed">Non installe</span>'
+    elif daemon_active:
+        daemon_badge = '<span class="daemon-status active">Actif</span>'
     else:
-        status_html = '''
-        <div class="stat-card info">
-            <h3>STATUT</h3>
-            <div class="value" style="font-size: 18px;">A jour</div>
-        </div>'''
+        daemon_badge = '<span class="daemon-status inactive">Arrete</span>'
+    
+    # Commits
+    commits_html = ""
+    for commit in recent_commits[:5]:
+        commits_html += f'<li><span class="commit-sha">{html.escape(commit.get("sha", ""))}</span> <span class="commit-date">{html.escape(commit.get("date", "")[:10])}</span><br>{html.escape(commit.get("message", ""))}</li>'
+    if not commits_html:
+        commits_html = '<li style="color: #888;">Aucun commit</li>'
+    
+    # Update status card
+    if update_available:
+        update_status_html = f'<div class="stat-card alert"><h3>MISE A JOUR</h3><div class="value" style="font-size: 18px;">Disponible</div></div>'
+    else:
+        update_status_html = '<div class="stat-card info"><h3>MISE A JOUR</h3><div class="value" style="font-size: 18px;">A jour</div></div>'
+    
+    # Daemon controls
+    if daemon_installed:
+        daemon_controls = f'''
+        <button class="btn btn-primary" onclick="controlDaemon('start')" {"disabled" if daemon_active else ""}>Demarrer</button>
+        <button class="btn btn-warning" onclick="controlDaemon('stop')" {"disabled" if not daemon_active else ""}>Arreter</button>
+        <button class="btn btn-purple" onclick="controlDaemon('restart')">Redemarrer</button>
+        <button class="btn btn-danger" onclick="uninstallDaemon()">Desinstaller</button>
+        '''
+    else:
+        daemon_controls = '<button id="installDaemonBtn" class="btn btn-purple" onclick="installDaemon()">Installer comme Service</button>'
     
     page_content = f'''
     <div id="message" class="message"></div>
     
     <div class="stats-grid">
-        <div class="stat-card">
-            <h3>VERSION ACTUELLE</h3>
-            <div class="value" style="font-size: 24px;">v{html.escape(version)}</div>
-        </div>
-        <div class="stat-card">
-            <h3>DERNIERE VERSION</h3>
-            <div class="value" style="font-size: 24px;">v{html.escape(str(latest))}</div>
-        </div>
-        {status_html}
+        <div class="stat-card"><h3>VERSION</h3><div class="value" style="font-size: 22px;">v{html.escape(version)}</div></div>
+        <div class="stat-card"><h3>DERNIERE</h3><div class="value" style="font-size: 22px;">v{html.escape(str(latest))}</div></div>
+        {update_status_html}
+        <div class="stat-card"><h3>SERVICE</h3><div class="value" style="font-size: 14px;">{daemon_badge}</div></div>
     </div>
     
-    <div class="control-panel">
-        <h2>Gestion des Mises a Jour</h2>
+    <!-- Section Daemon -->
+    <div class="control-panel daemon">
+        <h2>Installation comme Service (Daemon)</h2>
+        <div class="info-box">
+            <p>Installez le crawler comme service systemd pour qu'il demarre automatiquement au boot du serveur.</p>
+            <p>Service: <code>crawler-onion</code> | Utilisateur: <code>{html.escape(daemon_status.get('user', 'ubuntu'))}</code></p>
+        </div>
+        
+        {"" if daemon_installed else '''
+        <div class="form-row">
+            <div class="form-group" style="flex: 1;">
+                <label>Port Web</label>
+                <input type="number" id="daemonPort" value="4587" min="1024" max="65535">
+            </div>
+            <div class="form-group" style="flex: 1;">
+                <label>Workers</label>
+                <input type="number" id="daemonWorkers" value="15" min="1" max="50">
+            </div>
+        </div>
+        '''}
+        
         <div class="form-row">
             <div class="form-group">
-                <button id="checkUpdateBtn" class="btn btn-primary" onclick="checkUpdates()">Verifier les mises a jour</button>
-                <button id="updateBtn" class="btn btn-danger" onclick="performUpdate()" {"" if update_available else "disabled"}>Mettre a jour maintenant</button>
+                {daemon_controls}
+            </div>
+        </div>
+        <div id="daemonResult" style="margin-top: 10px;"></div>
+        
+        {"<p style='margin-top: 10px; color: #888; font-size: 11px;'>Auto-start: " + ("Oui" if daemon_enabled else "Non") + "</p>" if daemon_installed else ""}
+    </div>
+    
+    {f'''
+    <div class="section">
+        <div class="section-header"><span>Logs du Service</span><button class="btn btn-small btn-primary" onclick="refreshLogs()">Actualiser</button></div>
+        <div class="section-content" style="max-height: none;">
+            <div class="log-viewer" id="daemonLogs">{html.escape(daemon_logs) if daemon_logs else "Aucun log disponible"}</div>
+        </div>
+    </div>
+    ''' if daemon_installed else ""}
+    
+    <!-- Section Mises a jour -->
+    <div class="control-panel">
+        <h2>Mises a Jour</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <button id="checkUpdateBtn" class="btn btn-primary" onclick="checkUpdates()">Verifier</button>
+                <button id="updateBtn" class="btn btn-danger" onclick="performUpdate()" {"" if update_available else "disabled"}>Mettre a jour</button>
             </div>
         </div>
         <div id="updateStatus" style="margin-top: 10px; color: #888;"></div>
@@ -474,34 +473,30 @@ def render_updates(update_status: Dict[str, Any], port: int) -> str:
         <div class="section">
             <div class="section-header">Notes de version</div>
             <div class="section-content" style="max-height: none;">
-                {f'<div class="changelog">{html.escape(changelog)}</div>' if changelog else '<p style="color: #888;">Aucune note de version disponible.</p>'}
+                {f'<div class="changelog">{html.escape(changelog)}</div>' if changelog else '<p style="color: #888;">Aucune note disponible</p>'}
             </div>
         </div>
-        
         <div class="section">
             <div class="section-header">Commits recents</div>
-            <div class="section-content" style="max-height: none;">
-                <ul class="commit-list">
-                    {commits_html}
-                </ul>
-            </div>
+            <div class="section-content" style="max-height: none;"><ul class="commit-list">{commits_html}</ul></div>
         </div>
     </div>
     
     <div class="section">
-        <div class="section-header">Instructions de mise a jour manuelle</div>
+        <div class="section-header">Commandes utiles</div>
         <div class="section-content" style="max-height: none;">
-            <p style="color: #888; margin-bottom: 10px;">Si la mise a jour automatique ne fonctionne pas, executez ces commandes:</p>
-            <div class="changelog">cd ~/crawler-onion
-git pull origin master
-pip install -r requirements.txt
-# Redemarrez le crawler</div>
+            <div class="changelog"># Mise a jour manuelle
+cd ~/crawler-onion && git pull && pip install -r requirements.txt
+
+# Controle du service
+sudo systemctl status crawler-onion
+sudo systemctl restart crawler-onion
+sudo journalctl -u crawler-onion -f
+
+# Voir les logs en temps reel
+tail -f ~/crawler-onion/crawler.log</div>
         </div>
-    </div>
-    '''
+    </div>'''
     
-    return HTML_TEMPLATE.format(
-        page_content=page_content, port=port, version=version,
-        update_banner='',
-        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='active'
-    )
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='active')

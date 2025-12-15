@@ -12,6 +12,7 @@ from .utils import ClipboardHelper
 from .web_server import CrawlerWebServer
 from .crawler import OnionCrawler
 from .updater import Updater
+from .daemon import DaemonManager
 
 __version__ = "6.4.0"
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     'ClipboardHelper',
     'CrawlerWebServer',
     'OnionCrawler',
-    'Updater'
+    'Updater',
+    'DaemonManager'
 ]

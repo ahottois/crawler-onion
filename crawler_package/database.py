@@ -672,7 +672,7 @@ class DatabaseManager:
                   json.dumps(evidence), interpretation))
     
     def get_high_correlations(self, min_score: float = 0.7, limit: int = 50) -> List[Dict]:
-        """Recupere les correlations elevees."""
+        """Recupere les correlations elevees.""",
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("""
@@ -743,7 +743,7 @@ class DatabaseManager:
             params = []
             
             if query:
-                where_clauses.append("(title LIKE ? OR domain LIKE ? OR url LIKE ? OR content_text LIKE ?}")
+                where_clauses.append("(title LIKE ? OR domain LIKE ? OR url LIKE ? OR content_text LIKE ?)")
                 search_pattern = f"%{query}%"
                 params.extend([search_pattern] * 4)
             
@@ -970,7 +970,7 @@ class DatabaseManager:
                   profile.get('delay_ms', 1000), profile.get('max_pages', 100),
                   profile.get('priority_boost', 0), profile.get('notes', '')))
     
-    def get_domains_list(self, status: str = None, limit: int = 100) ? List[Dict]:
+    def get_domains_list(self, status: str = None, limit: int = 100) -> List[Dict]:
         """Liste les domaines avec leurs stats."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
@@ -1048,7 +1048,7 @@ class DatabaseManager:
                 'total_errors': server_errors + client_errors
             }
     
-    def get_entities(self, entity_type: str = None, limit: int = 100) ? List[Dict]:
+    def get_entities(self, entity_type: str = None, limit: int = 100) -> List[Dict]:
         """Recupere les entites extraites."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
@@ -1077,7 +1077,7 @@ class DatabaseManager:
     
     # ========== ALERTES ==========
     
-    def get_alerts(self, limit: int = 50, unread_only: bool = False, severity: str = None) ? List[Dict]:
+    def get_alerts(self, limit: int = 50, unread_only: bool = False, severity: str = None) -> List[Dict]:
         """Recupere les alertes."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
@@ -1294,7 +1294,7 @@ class DatabaseManager:
             """, (f'-{days} days',))
             return [{'date': r[0], 'total': r[1], 'success': r[2], 'domains': r[3]} for r in cursor.fetchall()]
     
-    def get_pending_urls(self, limit: int = 1000) ? List[tuple]:
+    def get_pending_urls(self, limit: int = 1000) -> List[tuple]:
         with self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT url, depth FROM intel WHERE status = 0 OR status >= 400
@@ -1302,11 +1302,11 @@ class DatabaseManager:
             """, (limit,))
             return cursor.fetchall()
     
-    def get_high_risk_sites(self, min_score: int = 50, limit: int = 50) ? List[Dict]:
+    def get_high_risk_sites(self, min_score: int = 50, limit: int = 50) -> List[Dict]:
         results, _ = self.search_fulltext('', {'min_risk': min_score}, limit)
         return results
     
-    def get_successful_urls_for_recrawl(self, min_depth: int = 0) ? List[str]:
+    def get_successful_urls_for_recrawl(self, min_depth: int = 0) -> List[str]:
         with self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT url FROM intel WHERE status = 200 AND depth >= ?

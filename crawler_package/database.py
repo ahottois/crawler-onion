@@ -79,7 +79,7 @@ class DatabaseManager:
     def _init_db(self):
         """Initialise le schema complet de la base."""
         with self._get_connection() as conn:
-            # Table principale intel
+            # Table principale intel (schema de base)
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS intel (
                     url TEXT PRIMARY KEY,
@@ -96,49 +96,30 @@ class DatabaseManager:
                     socials TEXT DEFAULT '{}',
                     json_data TEXT DEFAULT '[]',
                     content_length INTEGER DEFAULT 0,
-                    content_text TEXT DEFAULT '',
-                    content_hash TEXT DEFAULT '',
-                    language TEXT DEFAULT '',
-                    keywords TEXT DEFAULT '[]',
-                    category TEXT DEFAULT '',
-                    site_type TEXT DEFAULT '',
-                    tags TEXT DEFAULT '[]',
-                    risk_score INTEGER DEFAULT 0,
-                    threat_score REAL DEFAULT 0,
-                    priority_score INTEGER DEFAULT 50,
-                    crawl_count INTEGER DEFAULT 0,
-                    intel_density REAL DEFAULT 0,
-                    sentiment_score REAL DEFAULT 0,
-                    marked_important INTEGER DEFAULT 0,
-                    marked_false_positive INTEGER DEFAULT 0,
-                    encrypted INTEGER DEFAULT 0,
                     found_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_crawl TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             
-            # MIGRATION: Ajouter les colonnes manquantes AVANT de creer les index
+            # MIGRATION IMMEDIATE: Ajouter TOUTES les colonnes manquantes
             self._migrate_columns(conn)
             
-            # Index (apres migration)
+            # Index de base (colonnes qui existent toujours)
             conn.execute('CREATE INDEX IF NOT EXISTS idx_domain ON intel(domain)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_status ON intel(status)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_found_at ON intel(found_at)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_category ON intel(category)')
             
-            # Index sur colonnes potentiellement nouvelles (avec try/except)
-            try:
-                conn.execute('CREATE INDEX IF NOT EXISTS idx_risk ON intel(risk_score)')
-            except:
-                pass
-            try:
-                conn.execute('CREATE INDEX IF NOT EXISTS idx_priority ON intel(priority_score)')
-            except:
-                pass
-            try:
-                conn.execute('CREATE INDEX IF NOT EXISTS idx_site_type ON intel(site_type)')
-            except:
-                pass
+            # Index sur colonnes migrées (avec try/except au cas où)
+            for idx_name, col_name in [
+                ('idx_risk', 'risk_score'),
+                ('idx_priority', 'priority_score'),
+                ('idx_category', 'category'),
+                ('idx_site_type', 'site_type')
+            ]:
+                try:
+                    conn.execute(f'CREATE INDEX IF NOT EXISTS {idx_name} ON intel({col_name})')
+                except:
+                    pass
             
             # Table FTS5 pour recherche full-text
             try:
@@ -206,8 +187,11 @@ class DatabaseManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_alert_severity ON alerts(severity)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_alert_read ON alerts(read)')
+            try:
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_alert_severity ON alerts(severity)')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_alert_read ON alerts(read)')
+            except:
+                pass
             
             # Table pour les stats horaires
             conn.execute('''
@@ -260,10 +244,13 @@ class DatabaseManager:
                     UNIQUE(entity_type, value)
                 )
             ''')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_type ON entities(entity_type)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_value ON entities(value)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_domain ON entities(source_domain)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_risk ON entities(risk_score)')
+            try:
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_type ON entities(entity_type)')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_value ON entities(value)')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_domain ON entities(source_domain)')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_risk ON entities(risk_score)')
+            except:
+                pass
             
             # Table pour le graphe d'entites (edges)
             conn.execute('''
@@ -277,13 +264,14 @@ class DatabaseManager:
                     first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     occurrence_count INTEGER DEFAULT 1,
-                    UNIQUE(source_entity_id, target_entity_id),
-                    FOREIGN KEY(source_entity_id) REFERENCES entities(id),
-                    FOREIGN KEY(target_entity_id) REFERENCES entities(id)
+                    UNIQUE(source_entity_id, target_entity_id)
                 )
             ''')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_graph_source ON entity_graph(source_entity_id)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_graph_target ON entity_graph(target_entity_id)')
+            try:
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_graph_source ON entity_graph(source_entity_id)')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_graph_target ON entity_graph(target_entity_id)')
+            except:
+                pass
             
             # Table pour les correlations detectees
             conn.execute('''
@@ -299,12 +287,13 @@ class DatabaseManager:
                     status TEXT DEFAULT 'pending',
                     reviewed_by TEXT,
                     reviewed_at TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY(entity1_id) REFERENCES entities(id),
-                    FOREIGN KEY(entity2_id) REFERENCES entities(id)
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_corr_score ON correlations(correlation_score)')
+            try:
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_corr_score ON correlations(correlation_score)')
+            except:
+                pass
             
             # Table pour l'audit
             conn.execute('''
@@ -323,59 +312,45 @@ class DatabaseManager:
                     signature TEXT
                 )
             ''')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(timestamp)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id)')
-            
-            # Migration colonnes
-            self._migrate_columns(conn)
+            try:
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(timestamp)')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id)')
+            except:
+                pass
     
     def _migrate_columns(self, conn):
         """Ajoute les nouvelles colonnes si necessaire."""
-        # Migration intel
         existing = self._get_existing_columns(conn, 'intel')
+        
         new_columns = {
             'content_text': 'TEXT DEFAULT ""',
             'content_hash': 'TEXT DEFAULT ""',
+            'language': 'TEXT DEFAULT ""',
+            'keywords': 'TEXT DEFAULT "[]"',
+            'category': 'TEXT DEFAULT ""',
+            'site_type': 'TEXT DEFAULT ""',
+            'tags': 'TEXT DEFAULT "[]"',
             'risk_score': 'INTEGER DEFAULT 0',
+            'threat_score': 'REAL DEFAULT 0',
             'priority_score': 'INTEGER DEFAULT 50',
             'crawl_count': 'INTEGER DEFAULT 0',
             'intel_density': 'REAL DEFAULT 0',
-            'threat_score': 'REAL DEFAULT 0',
             'sentiment_score': 'REAL DEFAULT 0',
-            'site_type': 'TEXT DEFAULT ""',
             'marked_important': 'INTEGER DEFAULT 0',
             'marked_false_positive': 'INTEGER DEFAULT 0',
             'encrypted': 'INTEGER DEFAULT 0'
         }
+        
         for col, col_type in new_columns.items():
             if col not in existing:
                 try:
                     conn.execute(f'ALTER TABLE intel ADD COLUMN {col} {col_type}')
-                    Log.info(f"Added column {col} to intel table")
                 except Exception as e:
-                    Log.debug(f"Column {col} migration: {e}")
+                    pass  # Colonne existe deja ou autre erreur
         
-        # Migration entities (si la table existe)
-        try:
-            existing_entities = self._get_existing_columns(conn, 'entities')
-            entity_columns = {
-                'subtype': 'TEXT DEFAULT ""',
-                'confidence': 'REAL DEFAULT 0.5',
-                'validated': 'INTEGER DEFAULT 0',
-                'enriched': 'INTEGER DEFAULT 0',
-                'risk_score': 'REAL DEFAULT 0',
-                'enrichment_data': 'TEXT DEFAULT "{}"',
-                'occurrence_count': 'INTEGER DEFAULT 1'
-            }
-            for col, col_type in entity_columns.items():
-                if col not in existing_entities:
-                    try:
-                        conn.execute(f'ALTER TABLE entities ADD COLUMN {col} {col_type}')
-                    except:
-                        pass
-        except:
-            pass  # Table entities n'existe pas encore
-
+        # Commit les migrations
+        conn.commit()
+    
     def _get_existing_columns(self, conn, table: str) -> Set[str]:
         """Retourne les colonnes existantes."""
         cursor = conn.execute(f"PRAGMA table_info({table})")
@@ -672,7 +647,7 @@ class DatabaseManager:
                   json.dumps(evidence), interpretation))
     
     def get_high_correlations(self, min_score: float = 0.7, limit: int = 50) -> List[Dict]:
-        """Recupere les correlations elevees.""",
+        """Recupere les correlations elevees."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("""

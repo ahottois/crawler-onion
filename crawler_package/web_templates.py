@@ -108,6 +108,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <span class="nav-divider"></span>
             <a href="/export" class="nav-tab">Export</a>
             <a href="/settings" class="nav-tab">Config</a>
+            <a href="/security" class="nav-tab">Securite</a>
             <a href="/updates" class="nav-tab {nav_updates}">Systeme</a>
         </div>
         {update_banner}
@@ -862,8 +863,7 @@ def render_domain_detail(profile: Optional[Dict], port: int) -> str:
         <h2>''' + html.escape(domain) + '''</h2>
         <div class="stats-grid">
             <div class="stat-card"><h3>PAGES</h3><div class="value">''' + str(profile.get('total_pages', 0)) + '''</div></div>
-            <div class="stat-card info"><h3>SUCCES</h3><div class="value">''' + str(profile.get('success_pages', 0)) + '''</div></div>
-            <div class="stat-card warning"><h3>INTEL</h3><div class="value">''' + str(profile.get('intel_count', 0)) + '''</div></div>
+            <div class="stat-card"><h3>SUCCES</h3><div class="value">''' + str(profile.get('success_pages', 0)) + '''</div></div>
             <div class="stat-card"><h3>RISQUE MOY</h3><div class="value">''' + str(round(profile.get('avg_risk', 0) or 0, 1)) + '''</div></div>
         </div>
     </div>
@@ -1122,6 +1122,202 @@ def render_entities(data: Dict, entity_type: str, port: int) -> str:
             </table>
         </div>
     </div>'''
+    
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
+
+
+def render_login(port: int) -> str:
+    """Page de login."""
+    return '''<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Darknet Crawler - Login</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Courier New', monospace; background: #0a0a0a; color: #00ff00; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .login-container { background: #111; border: 2px solid #00ff00; border-radius: 8px; padding: 40px; width: 350px; box-shadow: 0 0 30px rgba(0, 255, 0, 0.2); }
+        h1 { text-align: center; margin-bottom: 30px; font-size: 20px; text-shadow: 0 0 10px #00ff00; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; color: #888; font-size: 12px; }
+        .form-group input { width: 100%; padding: 12px; background: #0a0a0a; border: 1px solid #333; color: #00ff00; font-family: 'Courier New', monospace; font-size: 14px; border-radius: 4px; }
+        .form-group input:focus { border-color: #00ff00; outline: none; }
+        .btn { width: 100%; padding: 12px; background: #00ff00; color: #000; border: none; font-family: 'Courier New', monospace; font-weight: bold; font-size: 14px; cursor: pointer; border-radius: 4px; }
+        .btn:hover { background: #00cc00; }
+        .error { background: #3a1a1a; border: 1px solid #ff4444; color: #ff4444; padding: 10px; border-radius: 4px; margin-bottom: 20px; font-size: 12px; display: none; }
+        .info { color: #666; font-size: 10px; text-align: center; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>DARKNET CRAWLER</h1>
+        <div id="error" class="error"></div>
+        <form onsubmit="login(event)">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="username" autocomplete="username" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="password" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn">LOGIN</button>
+        </form>
+        <p class="info">Protected access - Authorized users only</p>
+    </div>
+    <script>
+    function login(e) {
+        e.preventDefault();
+        var username = document.getElementById("username").value;
+        var password = document.getElementById("password").value;
+        var errorDiv = document.getElementById("error");
+        
+        fetch("/api/login", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({username: username, password: password})
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success && data.token) {
+                document.cookie = "token=" + data.token + "; path=/; max-age=86400";
+                window.location.href = "/";
+            } else {
+                errorDiv.textContent = data.message || "Login failed";
+                errorDiv.style.display = "block";
+            }
+        })
+        .catch(function(err) {
+            errorDiv.textContent = "Connection error";
+            errorDiv.style.display = "block";
+        });
+    }
+    </script>
+</body>
+</html>'''
+
+
+def render_security(security_status: Dict, audit_data: Dict, port: int) -> str:
+    """Page de configuration securite."""
+    version = "7.1.0"
+    
+    auth_status = 'Activee' if security_status.get('auth_enabled') else 'Desactivee'
+    auth_class = 'info' if security_status.get('auth_enabled') else 'warning'
+    
+    ip_status = 'Activee' if security_status.get('ip_whitelist_enabled') else 'Desactivee'
+    ip_class = 'info' if security_status.get('ip_whitelist_enabled') else ''
+    
+    rate_status = 'Active' if security_status.get('rate_limit_enabled') else 'Desactive'
+    
+    # IP Whitelist
+    ip_list_html = ""
+    for ip in security_status.get('ip_whitelist', []):
+        ip_list_html += '<tr><td>' + html.escape(ip) + '</td>'
+        ip_list_html += '<td><button class="btn btn-danger btn-small" onclick="removeIP(\'' + html.escape(ip) + '\')">Retirer</button></td></tr>'
+    
+    if not ip_list_html:
+        ip_list_html = '<tr><td colspan="2" style="color:#888;">Aucune IP</td></tr>'
+    
+    # Rate limit stats
+    rate_stats = security_status.get('rate_limit_stats', {})
+    
+    # Audit logs
+    audit_html = ""
+    for log in audit_data.get('logs', [])[:30]:
+        event_class = ''
+        if 'FAILED' in log.get('event', '') or 'BLOCKED' in log.get('event', ''):
+            event_class = 'style="color:#ff4444;"'
+        elif 'SUCCESS' in log.get('event', ''):
+            event_class = 'style="color:#00ff00;"'
+        
+        audit_html += '<tr>'
+        audit_html += '<td>' + html.escape(str(log.get('timestamp', ''))[-19:-7]) + '</td>'
+        audit_html += '<td ' + event_class + '>' + html.escape(log.get('event', '')) + '</td>'
+        audit_html += '<td>' + html.escape(str(log.get('ip', ''))) + '</td>'
+        audit_html += '<td>' + html.escape(str(log.get('details', {}))[:50]) + '</td>'
+        audit_html += '</tr>'
+    
+    if not audit_html:
+        audit_html = '<tr><td colspan="4" style="color:#888;">Aucun log</td></tr>'
+    
+    page_content = '''
+    <div class="stats-grid">
+        <div class="stat-card ''' + auth_class + '''"><h3>AUTH JWT</h3><div class="value" style="font-size:14px;">''' + auth_status + '''</div></div>
+        <div class="stat-card ''' + ip_class + '''"><h3>IP WHITELIST</h3><div class="value" style="font-size:14px;">''' + ip_status + '''</div></div>
+        <div class="stat-card"><h3>RATE LIMIT</h3><div class="value" style="font-size:14px;">''' + rate_status + '''</div></div>
+        <div class="stat-card"><h3>IPs BLOQUEES</h3><div class="value">''' + str(len(rate_stats.get('blocked_ips', []))) + '''</div></div>
+    </div>
+    
+    <div class="info-box">
+        <p><strong>Variables d'environnement pour activer la securite:</strong></p>
+        <p><code>CRAWLER_AUTH_ENABLED=true</code> - Active l'authentification JWT</p>
+        <p><code>CRAWLER_AUTH_USERNAME=admin</code> - Username (defaut: admin)</p>
+        <p><code>CRAWLER_AUTH_PASSWORD=xxx</code> - Password (defaut: changeme)</p>
+        <p><code>CRAWLER_IP_WHITELIST=true</code> - Active la whitelist IP</p>
+        <p><code>CRAWLER_ALLOWED_IPS=1.2.3.4,5.6.7.8</code> - IPs autorisees</p>
+    </div>
+    
+    <div class="grid-2">
+        <div class="section">
+            <div class="section-header">IP Whitelist</div>
+            <div class="section-content">
+                <div class="form-row" style="margin-bottom:15px;">
+                    <input type="text" id="newIP" placeholder="IP a ajouter" style="flex:2;">
+                    <button class="btn btn-primary" onclick="addIP()">Ajouter</button>
+                </div>
+                <table>
+                    <thead><tr><th>IP</th><th>Action</th></tr></thead>
+                    <tbody>''' + ip_list_html + '''</tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-header">Rate Limiting</div>
+            <div class="section-content">
+                <p style="margin-bottom:10px;">100 requetes/min par IP, 10 recherches/sec</p>
+                <p>IPs actives: <strong>''' + str(rate_stats.get('active_ips', 0)) + '''</strong></p>
+                <p>Requetes trackees: <strong>''' + str(rate_stats.get('total_requests_tracked', 0)) + '''</strong></p>
+                <p style="margin-top:10px;">IPs bloquees:</p>
+                <div class="changelog" style="max-height:100px;">''' + ', '.join(rate_stats.get('blocked_ips', [])) or 'Aucune' + '''</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <div class="section-header">Audit Logs (''' + str(len(audit_data.get('logs', []))) + ''')</div>
+        <div class="section-content" style="max-height:400px;">
+            <table>
+                <thead><tr><th>Date</th><th>Event</th><th>IP</th><th>Details</th></tr></thead>
+                <tbody>''' + audit_html + '''</tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+    function addIP() {
+        var ip = document.getElementById("newIP").value.trim();
+        if (!ip) return;
+        
+        fetch("/api/ip-whitelist", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({action: "add", ip: ip})
+        }).then(function() { location.reload(); });
+    }
+    
+    function removeIP(ip) {
+        if (!confirm("Retirer " + ip + "?")) return;
+        
+        fetch("/api/ip-whitelist", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({action: "remove", ip: ip})
+        }).then(function() { location.reload(); });
+    }
+    </script>'''
     
     return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
         nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')

@@ -13,10 +13,15 @@ from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Dict, List, Any, Optional
 from urllib.parse import urlparse, parse_qs, unquote
+from http.cookies import SimpleCookie
 
 from .logger import Log
 from .updater import Updater
 from .daemon import DaemonManager
+from .security import (
+    security_manager, SecurityConfig, AuditLogger, 
+    InputValidator, SecurityManager
+)
 
 
 class CrawlerWebServer:
@@ -32,6 +37,9 @@ class CrawlerWebServer:
         self._running = False
         self._paused = False
         
+        # Security
+        self.security = security_manager
+        
         # Config webhook
         self.webhook_url = os.environ.get('CRAWLER_WEBHOOK_URL', '')
         
@@ -42,7 +50,7 @@ class CrawlerWebServer:
                 current_version=config.version
             )
         else:
-            self.updater = Updater("ahottois", "crawler-onion", "7.0.0")
+            self.updater = Updater("ahottois", "crawler-onion", "7.1.0")
         
         self.daemon = DaemonManager()
     
@@ -107,6 +115,11 @@ class CrawlerWebServer:
     
     def _search(self, query: str, filters: Dict = None, page: int = 1, per_page: int = 50):
         """Recherche avec pagination."""
+        # Valider la requete
+        valid, error = InputValidator.validate_search_query(query)
+        if not valid:
+            return {'results': [], 'total': 0, 'error': error}
+        
         db = self._get_db()
         offset = (page - 1) * per_page
         results, total = db.search_fulltext(query, filters, per_page, offset)
@@ -159,7 +172,6 @@ class CrawlerWebServer:
     def _get_sanity_checks(self) -> Dict:
         """Verifications systeme."""
         import shutil
-        import psutil
         
         checks = {
             'disk_free_gb': 0,
@@ -177,6 +189,7 @@ class CrawlerWebServer:
         except: pass
         
         try:
+            import psutil
             checks['ram_percent'] = round(psutil.virtual_memory().percent, 1)
         except: pass
         
@@ -231,27 +244,30 @@ class CrawlerWebServer:
             'low_trust': len([s for s in sites if s['trust_level'] == 'low'])
         }
     
-    # ========== ACTIONS =========="""
-    def _add_seeds(self, urls: List[str]) -> Dict:
-        """Ajoute des URLs."""
-        if not urls:
-            return {'success': False, 'message': 'Aucune URL'}
+    # ========== ACTIONS ==========[]
+    
+    def _add_seeds(self, urls: List[str], ip: str) -> Dict:
+        """Ajoute des URLs avec validation."""
+        # Valider les URLs
+        valid, error, valid_urls = InputValidator.validate_seed_urls(urls)
+        if not valid:
+            return {'success': False, 'message': error}
         
         added = 0
         try:
             conn = sqlite3.connect(self.db_file)
-            for url in urls:
-                url = url.strip()
-                if url and '.onion' in url:
-                    try:
-                        conn.execute("""
-                            INSERT OR IGNORE INTO intel (url, domain, status, depth, priority_score)
-                            VALUES (?, ?, 0, 0, 50)
-                        """, (url, urlparse(url).netloc))
-                        added += 1
-                    except: pass
+            for url in valid_urls:
+                try:
+                    conn.execute("""
+                        INSERT OR IGNORE INTO intel (url, domain, status, depth, priority_score)
+                        VALUES (?, ?, 0, 0, 50)
+                    """, (url, urlparse(url).netloc))
+                    added += 1
+                except: pass
             conn.commit()
             conn.close()
+            
+            AuditLogger.log('SEEDS_ADDED', ip, {'count': added, 'urls': valid_urls[:5]})
         except Exception as e:
             return {'success': False, 'message': str(e)}
         
@@ -301,8 +317,10 @@ class CrawlerWebServer:
         db.freeze_domain(domain, freeze)
         return {'success': True, 'message': f'Domaine {"gele" if freeze else "degele"}'}
     
-    def _control_crawler(self, action: str) -> Dict:
+    def _control_crawler(self, action: str, ip: str) -> Dict:
         """Controle le crawler."""
+        AuditLogger.log('CRAWLER_CONTROL', ip, {'action': action})
+        
         if action == 'pause':
             self._paused = True
             if self.crawler:
@@ -331,8 +349,10 @@ class CrawlerWebServer:
             'total_requests': getattr(self.crawler, 'total_requests', 0)
         }
     
-    def _export_data(self, export_type: str, filters: Dict = None) -> Dict:
+    def _export_data(self, export_type: str, filters: Dict = None, ip: str = '') -> Dict:
         """Exporte les donnees."""
+        AuditLogger.log('DATA_EXPORT', ip, {'type': export_type})
+        
         db = self._get_db()
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         export_dir = os.path.dirname(self.db_file) or '.'
@@ -357,8 +377,10 @@ class CrawlerWebServer:
         except Exception as e:
             return {'success': False, 'message': str(e)}
     
-    def _purge_data(self, days: int, anonymize: bool = False) -> Dict:
+    def _purge_data(self, days: int, anonymize: bool = False, ip: str = '') -> Dict:
         """Purge les donnees."""
+        AuditLogger.log('DATA_PURGE', ip, {'days': days, 'anonymize': anonymize})
+        
         db = self._get_db()
         db.purge_old_data(days, anonymize)
         return {'success': True, 'message': f'Donnees > {days} jours {"anonymisees" if anonymize else "supprimees"}'}
@@ -369,7 +391,37 @@ class CrawlerWebServer:
         db.vacuum()
         return {'success': True, 'message': 'Base optimisee'}
     
-    # ========== UPDATE/DAEMON =========="""
+    # ========== SECURITY ==========[]
+    
+    def _authenticate(self, username: str, password: str, ip: str) -> Dict:
+        """Authentifie un utilisateur."""
+        success, token, error = self.security.authenticate(username, password, ip)
+        if success:
+            return {'success': True, 'token': token}
+        return {'success': False, 'message': error}
+    
+    def _get_security_status(self) -> Dict:
+        """Status securite."""
+        return self.security.get_security_status()
+    
+    def _get_audit_logs(self, limit: int = 100) -> Dict:
+        """Logs d'audit."""
+        return {'logs': AuditLogger.get_recent_logs(limit)}
+    
+    def _update_ip_whitelist(self, action: str, ip: str, requester_ip: str) -> Dict:
+        """Gere la whitelist IP."""
+        AuditLogger.log('IP_WHITELIST_UPDATE', requester_ip, {'action': action, 'target_ip': ip})
+        
+        if action == 'add':
+            self.security.ip_whitelist.add_ip(ip)
+            return {'success': True, 'message': f'{ip} ajoute'}
+        elif action == 'remove':
+            self.security.ip_whitelist.remove_ip(ip)
+            return {'success': True, 'message': f'{ip} retire'}
+        return {'success': False, 'message': 'Action inconnue'}
+    
+    # ========== UPDATE/DAEMON ==========[]
+    
     def _get_update_status(self) -> Dict:
         return self.updater.get_update_status()
     
@@ -394,7 +446,8 @@ class CrawlerWebServer:
     def _get_daemon_logs(self, lines: int = 50) -> Dict:
         return self.daemon.get_logs(lines)
     
-    # ========== LISTS =========="""
+    # ========== LISTS ==========[]
+    
     def _add_to_list(self, data: Dict) -> Dict:
         domain = data.get('domain', '').strip()
         list_type = data.get('list_type', 'blacklist')
@@ -436,17 +489,71 @@ class CrawlerWebServer:
         db = self._get_db()
         return db.get_domain_lists()
     
-    # ========== HANDLER =========="""
+    # ========== HANDLER ==========[]
+    
     def _create_handler(self):
         server_instance = self
         
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, format, *args): pass
             
+            def _get_client_ip(self):
+                """Recupere l'IP client."""
+                # Check X-Forwarded-For header (reverse proxy)
+                forwarded = self.headers.get('X-Forwarded-For')
+                if forwarded:
+                    return forwarded.split(',')[0].strip()
+                return self.client_address[0]
+            
+            def _get_token(self):
+                """Recupere le token JWT."""
+                # Check Authorization header
+                auth = self.headers.get('Authorization', '')
+                if auth.startswith('Bearer '):
+                    return auth[7:]
+                
+                # Check cookie
+                cookie = SimpleCookie(self.headers.get('Cookie', ''))
+                if 'token' in cookie:
+                    return cookie['token'].value
+                
+                return None
+            
+            def _check_security(self, is_search: bool = False) -> tuple:
+                """Verifie la securite. Retourne (allowed, error, user)."""
+                ip = self._get_client_ip()
+                token = self._get_token()
+                return server_instance.security.check_request(ip, token, is_search)
+            
+            def _send_error_response(self, code: int, message: str):
+                """Envoie une reponse d'erreur."""
+                self.send_response(code)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': message}).encode('utf-8'))
+            
             def do_GET(self):
+                ip = self._get_client_ip()
                 parsed = urlparse(self.path)
                 path = parsed.path
                 params = parse_qs(parsed.query)
+                
+                # Routes publiques (login)
+                if path == '/login':
+                    self._send_html(server_instance._render_login())
+                    return
+                
+                # Verifier securite
+                allowed, error, user = self._check_security(is_search=(path == '/search' or path.startswith('/api/search')))
+                if not allowed:
+                    if SecurityConfig.AUTH_ENABLED and path != '/api/login':
+                        # Rediriger vers login
+                        self.send_response(302)
+                        self.send_header('Location', '/login')
+                        self.end_headers()
+                        return
+                    self._send_error_response(403, error)
+                    return
                 
                 # Pages HTML
                 if path == '/' or path == '/index.html':
@@ -477,6 +584,8 @@ class CrawlerWebServer:
                     self._send_html(server_instance._render_export())
                 elif path == '/settings':
                     self._send_html(server_instance._render_settings())
+                elif path == '/security':
+                    self._send_html(server_instance._render_security())
                 elif path == '/updates':
                     self._send_html(server_instance._render_updates())
                 # API GET
@@ -513,6 +622,11 @@ class CrawlerWebServer:
                     self._send_json({'alerts': server_instance._get_alerts()})
                 elif path == '/api/workers':
                     self._send_json(server_instance._get_workers_status())
+                elif path == '/api/security-status':
+                    self._send_json(server_instance._get_security_status())
+                elif path == '/api/audit-logs':
+                    limit = int(params.get('limit', ['100'])[0])
+                    self._send_json(server_instance._get_audit_logs(limit))
                 elif path == '/api/update-status':
                     self._send_json(server_instance._get_update_status())
                 elif path == '/api/daemon-status':
@@ -527,13 +641,31 @@ class CrawlerWebServer:
                     self.end_headers()
             
             def do_POST(self):
+                ip = self._get_client_ip()
                 content_length = int(self.headers.get('Content-Length', 0))
                 body = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else '{}'
                 try: data = json.loads(body) if body else {}
                 except: data = {}
                 
+                # Route login publique
+                if self.path == '/api/login':
+                    result = server_instance._authenticate(
+                        data.get('username', ''),
+                        data.get('password', ''),
+                        ip
+                    )
+                    self._send_json(result)
+                    return
+                
+                # Verifier securite
+                allowed, error, user = self._check_security()
+                if not allowed:
+                    self._send_error_response(403, error)
+                    return
+                
+                # Routes protegees
                 if self.path == '/api/add-seeds':
-                    result = server_instance._add_seeds(data.get('urls', []))
+                    result = server_instance._add_seeds(data.get('urls', []), ip)
                 elif self.path == '/api/refresh-links':
                     result = server_instance._refresh_links()
                 elif self.path == '/api/mark-intel':
@@ -545,13 +677,15 @@ class CrawlerWebServer:
                 elif self.path == '/api/freeze-domain':
                     result = server_instance._freeze_domain(data)
                 elif self.path == '/api/control-crawler':
-                    result = server_instance._control_crawler(data.get('action', ''))
+                    result = server_instance._control_crawler(data.get('action', ''), ip)
                 elif self.path == '/api/export':
-                    result = server_instance._export_data(data.get('type', 'json'), data.get('filters'))
+                    result = server_instance._export_data(data.get('type', 'json'), data.get('filters'), ip)
                 elif self.path == '/api/purge':
-                    result = server_instance._purge_data(data.get('days', 30), data.get('anonymize', False))
+                    result = server_instance._purge_data(data.get('days', 30), data.get('anonymize', False), ip)
                 elif self.path == '/api/vacuum':
                     result = server_instance._vacuum_db()
+                elif self.path == '/api/ip-whitelist':
+                    result = server_instance._update_ip_whitelist(data.get('action'), data.get('ip'), ip)
                 elif self.path == '/api/perform-update':
                     result = server_instance._perform_update()
                 elif self.path == '/api/check-updates':
@@ -602,6 +736,11 @@ class CrawlerWebServer:
             self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
             self.thread.start()
             Log.success(f"Serveur web sur http://0.0.0.0:{self.port}")
+            
+            if SecurityConfig.AUTH_ENABLED:
+                Log.info("Auth JWT activee")
+            if SecurityConfig.IP_WHITELIST_ENABLED:
+                Log.info(f"IP Whitelist active: {len(self.security.ip_whitelist.get_list())} IPs")
         except Exception as e:
             Log.error(f"Erreur serveur web: {e}")
     
@@ -612,7 +751,12 @@ class CrawlerWebServer:
             self._running = False
             Log.info("Serveur web arrete")
     
-    # ========== RENDER PAGES =========="""
+    # ========== RENDER PAGES ==========[]
+    
+    def _render_login(self) -> str:
+        from .web_templates import render_login
+        return render_login(self.port)
+    
     def _render_dashboard(self) -> str:
         from .web_templates import render_dashboard
         return render_dashboard(self._get_data(), self.port, self._get_update_status())
@@ -688,6 +832,10 @@ class CrawlerWebServer:
     def _render_settings(self) -> str:
         from .web_templates import render_settings
         return render_settings(self._get_domain_lists(), self.port)
+    
+    def _render_security(self) -> str:
+        from .web_templates import render_security
+        return render_security(self._get_security_status(), self._get_audit_logs(50), self.port)
     
     def _render_updates(self) -> str:
         from .web_templates import render_updates

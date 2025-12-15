@@ -39,6 +39,8 @@
     <Folder Include="crawler_package\" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="install.sh" />
+    <Content Include="pyproject.toml" />
     <Content Include="README.md" />
     <Content Include="requirements.txt" />
   </ItemGroup>

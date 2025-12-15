@@ -2,11 +2,18 @@
 
 Crawler Tor modulaire pour l'exploration et l'analyse de sites .onion avec interface web intégrée.
 
+## ?? Installation rapide (Ubuntu Server)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/ahottois/crawler-onion/master/install.sh | bash
+```
+
 ## ?? Structure du projet
 
 ```
-crawler onion/
+crawler-onion/
 ??? run.py                          # Lanceur principal
+??? install.sh                      # Script d'installation Ubuntu
 ??? requirements.txt                # Dépendances Python
 ??? README.md                       # Documentation
 ??? crawler_package/
@@ -23,14 +30,20 @@ crawler onion/
     ??? main.py                     # Point d'entrée CLI
 ```
 
-## ?? Installation
+## ?? Installation manuelle
 
-1. **Installer les dépendances** :
+1. **Cloner le repository** :
+```bash
+git clone https://github.com/ahottois/crawler-onion.git
+cd crawler-onion
+```
+
+2. **Installer les dépendances** :
 ```bash
 pip install -r requirements.txt
 ```
 
-2. **S'assurer que Tor est installé et en cours d'exécution** :
+3. **S'assurer que Tor est installé et en cours d'exécution** :
 ```bash
 # Linux
 sudo apt install tor

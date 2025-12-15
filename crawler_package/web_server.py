@@ -75,8 +75,13 @@ class CrawlerWebServer:
         db = self._get_db()
         stats = db.get_stats()
         
+        # Verifier si le crawler est en cours d'execution
+        crawler_running = False
+        if self.crawler:
+            crawler_running = not self.crawler.stop_event.is_set()
+        
         data = {
-            'status': 'PAUSED' if self._paused else ('RUNNING' if self.crawler and self.crawler.running else 'STOPPED'),
+            'status': 'PAUSED' if self._paused else ('RUNNING' if crawler_running else 'STOPPED'),
             'total_urls': stats.get('total', 0),
             'success_urls': stats.get('success', 0),
             'domains': stats.get('domains', 0),

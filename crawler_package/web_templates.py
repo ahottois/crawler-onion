@@ -7,7 +7,7 @@ import html
 import json
 import math
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 
 # Remplacer HTML_TEMPLATE
@@ -1028,23 +1028,24 @@ def render_monitoring(data: Dict, workers: Dict, port: int) -> str:
         
         <div class="section">
             <div class="section-header">Stats Horaires</div>
-            <div class="section-content">
-                <table>
-                    <thead><tr><th>Heure</th><th>Crawl</th><th>OK</th><th>Err</th><th>Intel</th></tr></thead>
-                    <tbody>''' + (hourly_html or '<tr><td colspan="5">Pas de donnees</td></tr>') + '''</tbody>
-                </table>
+                <div class="section-content">
+                    <table>
+                        <thead><tr><th>Heure</th><th>Crawl</th><th>OK</th><th>Err</th><th>Intel</th></tr></thead>
+                        <tbody>''' + (hourly_html or '<tr><td colspan="5">Pas de donnees</td></tr>') + '''</tbody>
+                    </table>
+                </div>
             </div>
         </div>
-    </div>
-    
-    <div class="section">
-        <div class="section-header">Erreurs par Code HTTP</div>
-        <div class="section-content">
-            <p style="color:#888; margin-bottom:10px;">Total erreurs: ''' + str(errors.get('total_errors', 0)) + ''' (serveur: ''' + str(errors.get('server_errors', 0)) + ''', client: ''' + str(errors.get('client_errors', 0)) + ''')</p>
-            <table>
-                <thead><tr><th>Code</th><th>Count</th></tr></thead>
-                <tbody>''' + (errors_html or '<tr><td colspan="2">Aucune erreur</td></tr>') + '''</tbody>
-            </table>
+        
+        <div class="section">
+            <div class="section-header">Erreurs par Code HTTP</div>
+            <div class="section-content">
+                <p style="color:#888; margin-bottom:10px;">Total erreurs: ''' + str(errors.get('total_errors', 0)) + ''' (serveur: ''' + str(errors.get('server_errors', 0)) + ''', client: ''' + str(errors.get('client_errors', 0)) + ''')</p>
+                <table>
+                    <thead><tr><th>Code</th><th>Count</th></tr></thead>
+                    <tbody>''' + (errors_html or '<tr><td colspan="2">Aucune erreur</td></tr>') + '''</tbody>
+                </table>
+            </div>
         </div>
     </div>
     
@@ -1451,9 +1452,9 @@ def render_correlations(corr_data: Dict, port: int) -> str:
     
     page_content = '''
     <div class="stats-grid">
-        <div class="stat-card danger"><h3>CORRELATIONS</h3><div class="value">''' + str(total_corr) + '''</div></div>
-        <div class="stat-card warning"><h3>CROSS-DOMAIN</h3><div class="value">''' + str(len(cross_domain)) + '''</div></div>
-        <div class="stat-card info"><h3>SCORE MOYEN</h3><div class="value">''' + str(round(avg_score, 2)) + '''</div></div>
+        <div class="stat-card"><h3>CORRELATIONS</h3><div class="value">''' + str(total_corr) + '''</div></div>
+        <div class="stat-card"><h3>CROSS-DOMAIN</h3><div class="value">''' + str(len(cross_domain)) + '''</div></div>
+        <div class="stat-card"><h3>SCORE MOYEN</h3><div class="value">''' + str(round(avg_score, 2)) + '''</div></div>
     </div>
     
     <div class="section">
@@ -1485,233 +1486,6 @@ def render_correlations(corr_data: Dict, port: int) -> str:
     
     return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
         nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
-
-
-def render_alerts(alerts: List[Dict], port: int) -> str:
-    """Page des alertes simple."""
-    version = "7.0.0"
-    
-    alerts_html = ""
-    for a in alerts[:50]:
-        severity = a.get('severity', 'info')
-        sev_class = 'danger' if severity == 'danger' else ('warning' if severity == 'warning' else '')
-        
-        alerts_html += '<tr class="' + sev_class + '">'
-        alerts_html += '<td>' + html.escape(str(a.get('severity', 'info'))) + '</td>'
-        alerts_html += '<td>' + html.escape(str(a.get('title', ''))[:60]) + '</td>'
-        alerts_html += '<td>' + html.escape(str(a.get('domain', '') or '-')) + '</td>'
-        alerts_html += '<td>' + html.escape(str(a.get('created_at', ''))[:16]) + '</td>'
-        alerts_html += '</tr>'
-    
-    if not alerts_html:
-        alerts_html = '<tr><td colspan="4" style="color:#888;">Aucune alerte</td></tr>'
-    
-    page_content = '''
-    <div class="section">
-        <div class="section-header">
-            Alertes (''' + str(len(alerts)) + ''')
-            <button class="btn btn-small btn-warning" onclick="markAllRead()">Tout marquer lu</button>
-            <button class="btn btn-small btn-danger" onclick="clearAlerts()">Supprimer</button>
-        </div>
-        <div class="section-content" style="max-height:600px;">
-            <table>
-                <thead><tr><th>Severite</th><th>Message</th><th>Domaine</th><th>Date</th></tr></thead>
-                <tbody>''' + alerts_html + '''</tbody>
-            </table>
-        </div>
-    </div>
-    
-    <script>
-    function markAllRead() {
-        fetch("/api/mark-alerts-read", {method: "POST"}).then(function() { location.reload(); });
-    }
-    function clearAlerts() {
-        if (confirm("Supprimer toutes les alertes?")) {
-            fetch("/api/clear-alerts", {method: "POST"}).then(function() { location.reload(); });
-        }
-    }
-    </script>'''
-    
-    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
-        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
-
-
-def render_export(stats: Dict, port: int) -> str:
-    """Page d'export."""
-    version = "7.0.0"
-    
-    page_content = '''
-    <div class="stats-grid">
-        <div class="stat-card"><h3>TOTAL</h3><div class="value">''' + str(stats.get('total', 0)) + '''</div></div>
-        <div class="stat-card"><h3>EMAILS</h3><div class="value">''' + str(stats.get('with_emails', 0)) + '''</div></div>
-        <div class="stat-card"><h3>CRYPTO</h3><div class="value">''' + str(stats.get('with_crypto', 0)) + '''</div></div>
-        <div class="stat-card"><h3>SECRETS</h3><div class="value">''' + str(stats.get('with_secrets', 0)) + '''</div></div>
-    </div>
-    
-    <div class="control-panel">
-        <h2>Exporter les Donnees</h2>
-        <div class="form-row">
-            <button class="btn btn-primary" onclick="exportData('json')">Export JSON</button>
-            <button class="btn btn-primary" onclick="exportData('csv')">Export CSV</button>
-            <button class="btn btn-warning" onclick="exportData('emails')">Export Emails</button>
-            <button class="btn btn-purple" onclick="exportData('crypto')">Export Crypto</button>
-        </div>
-        <div id="exportResult" style="margin-top:15px;"></div>
-    </div>
-    
-    <div class="control-panel">
-        <h2>Maintenance Base de Donnees</h2>
-        <div class="form-row">
-            <div class="form-group">
-                <label>Purger les donnees de plus de X jours</label>
-                <input type="number" id="purgeDays" value="30" min="1" max="365">
-            </div>
-            <div class="form-group" style="flex:0;">
-                <button class="btn btn-danger" onclick="purgeData(false)">Supprimer</button>
-                <button class="btn btn-warning" onclick="purgeData(true)">Anonymiser</button>
-            </div>
-        </div>
-        <div class="form-row">
-            <button class="btn btn-primary" onclick="vacuumDb()">Optimiser DB (VACUUM)</button>
-        </div>
-        <div id="maintenanceResult" style="margin-top:15px;"></div>
-    </div>
-    
-    <script>
-    function exportData(type) {
-        var result = document.getElementById("exportResult");
-        result.innerHTML = '<span class="loading"></span> Export en cours...';
-        fetch("/api/export", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({type: type})
-        }).then(function(r) { return r.json(); })
-        .then(function(data) {
-            result.innerHTML = '<span style="color:' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>';
-        });
-    }
-    function purgeData(anonymize) {
-        var days = document.getElementById("purgeDays").value;
-        if (!confirm((anonymize ? "Anonymiser" : "Supprimer") + " les donnees de plus de " + days + " jours?")) return;
-        var result = document.getElementById("maintenanceResult");
-        fetch("/api/purge", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({days: parseInt(days), anonymize: anonymize})
-        }).then(function(r) { return r.json(); })
-        .then(function(data) {
-            result.innerHTML = '<span style="color:' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>';
-        });
-    }
-    function vacuumDb() {
-        var result = document.getElementById("maintenanceResult");
-        result.innerHTML = '<span class="loading"></span>';
-        fetch("/api/vacuum", {method: "POST"}).then(function(r) { return r.json(); })
-        .then(function(data) {
-            result.innerHTML = '<span style="color:#00ff00;">' + data.message + '</span>';
-        });
-    }
-    </script>'''
-    
-    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
-        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
-
-
-def render_settings(domain_lists: Dict, port: int) -> str:
-    """Page des settings."""
-    version = "7.0.0"
-    
-    blacklist_html = ""
-    for item in domain_lists.get('blacklist', []):
-        blacklist_html += '<tr><td>' + html.escape(item.get('domain', '')) + '</td>'
-        blacklist_html += '<td>' + html.escape(item.get('reason', '')) + '</td>'
-        blacklist_html += '<td><button class="btn btn-danger btn-small" onclick="removeFromList(\'' + html.escape(item.get('domain', '')) + '\')">X</button></td></tr>'
-    
-    if not blacklist_html:
-        blacklist_html = '<tr><td colspan="3" style="color:#888;">Vide</td></tr>'
-    
-    whitelist_html = ""
-    for item in domain_lists.get('whitelist', []):
-        whitelist_html += '<tr><td>' + html.escape(item.get('domain', '')) + '</td>'
-        whitelist_html += '<td>' + html.escape(item.get('reason', '')) + '</td>'
-        whitelist_html += '<td><button class="btn btn-danger btn-small" onclick="removeFromList(\'' + html.escape(item.get('domain', '')) + '\')">X</button></td></tr>'
-    
-    if not whitelist_html:
-        whitelist_html = '<tr><td colspan="3" style="color:#888;">Vide</td></tr>'
-    
-    page_content = '''
-    <div class="grid-2">
-        <div class="section">
-            <div class="section-header">Blacklist</div>
-            <div class="section-content">
-                <div class="form-row" style="margin-bottom:10px;">
-                    <input type="text" id="blacklistDomain" placeholder="domaine.onion">
-                    <input type="text" id="blacklistReason" placeholder="Raison">
-                    <button class="btn btn-danger" onclick="addToList('blacklist')">+</button>
-                </div>
-                <table>
-                    <thead><tr><th>Domaine</th><th>Raison</th><th></th></tr></thead>
-                    <tbody>''' + blacklist_html + '''</tbody>
-                </table>
-            </div>
-        </div>
-        
-        <div class="section">
-            <div class="section-header">Whitelist</div>
-            <div class="section-content">
-                <div class="form-row" style="margin-bottom:10px;">
-                    <input type="text" id="whitelistDomain" placeholder="domaine.onion">
-                    <input type="text" id="whitelistReason" placeholder="Raison">
-                    <button class="btn btn-primary" onclick="addToList('whitelist')">+</button>
-                </div>
-                <table>
-                    <thead><tr><th>Domaine</th><th>Raison</th><th></th></tr></thead>
-                    <tbody>''' + whitelist_html + '''</tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    
-    <script>
-    function addToList(listType) {
-        var domain = document.getElementById(listType + "Domain").value.trim();
-        var reason = document.getElementById(listType + "Reason").value.trim();
-        if (!domain) return;
-        fetch("/api/add-to-list", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({domain: domain, list_type: listType, reason: reason})
-        }).then(function() { location.reload(); });
-    }
-    function removeFromList(domain) {
-        if (!confirm("Retirer " + domain + "?")) return;
-        fetch("/api/remove-from-list", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({domain: domain})
-        }).then(function() { location.reload(); });
-    }
-    </script>'''
-    
-    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
-        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
-
-
-def _render_simple_chart(labels: List[str], values: List[int]) -> str:
-    """Genere un simple bar chart en HTML/CSS."""
-    if not values:
-        return '<p style="color:#888;">Pas de donnees</p>'
-    
-    max_val = max(values) if values else 1
-    bars = ""
-    for i, (label, val) in enumerate(zip(labels, values)):
-        height = int((val / max_val) * 100) if max_val > 0 else 0
-        bars += '<div style="display:inline-block;width:30px;margin:2px;text-align:center;">'
-        bars += '<div style="height:' + str(height) + 'px;background:#00ff00;min-height:2px;"></div>'
-        bars += '<div style="font-size:8px;color:#888;">' + str(label) + '</div>'
-        bars += '</div>'
-    
-    return '<div style="height:120px;display:flex;align-items:flex-end;">' + bars + '</div>'
 
 
 def render_alerts(alerts: List[Dict], port: int) -> str:

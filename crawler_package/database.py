@@ -116,13 +116,29 @@ class DatabaseManager:
                     last_crawl TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            
+            # MIGRATION: Ajouter les colonnes manquantes AVANT de creer les index
+            self._migrate_columns(conn)
+            
+            # Index (apres migration)
             conn.execute('CREATE INDEX IF NOT EXISTS idx_domain ON intel(domain)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_status ON intel(status)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_risk ON intel(risk_score)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_priority ON intel(priority_score)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_found_at ON intel(found_at)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_category ON intel(category)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_site_type ON intel(site_type)')
+            
+            # Index sur colonnes potentiellement nouvelles (avec try/except)
+            try:
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_risk ON intel(risk_score)')
+            except:
+                pass
+            try:
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_priority ON intel(priority_score)')
+            except:
+                pass
+            try:
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_site_type ON intel(site_type)')
+            except:
+                pass
             
             # Table FTS5 pour recherche full-text
             try:
@@ -315,10 +331,12 @@ class DatabaseManager:
     
     def _migrate_columns(self, conn):
         """Ajoute les nouvelles colonnes si necessaire."""
+        # Migration intel
         existing = self._get_existing_columns(conn, 'intel')
         new_columns = {
             'content_text': 'TEXT DEFAULT ""',
             'content_hash': 'TEXT DEFAULT ""',
+            'risk_score': 'INTEGER DEFAULT 0',
             'priority_score': 'INTEGER DEFAULT 50',
             'crawl_count': 'INTEGER DEFAULT 0',
             'intel_density': 'REAL DEFAULT 0',
@@ -333,27 +351,31 @@ class DatabaseManager:
             if col not in existing:
                 try:
                     conn.execute(f'ALTER TABLE intel ADD COLUMN {col} {col_type}')
-                except:
-                    pass
+                    Log.info(f"Added column {col} to intel table")
+                except Exception as e:
+                    Log.debug(f"Column {col} migration: {e}")
         
-        # Migration entities
-        existing_entities = self._get_existing_columns(conn, 'entities')
-        entity_columns = {
-            'subtype': 'TEXT DEFAULT ""',
-            'confidence': 'REAL DEFAULT 0.5',
-            'validated': 'INTEGER DEFAULT 0',
-            'enriched': 'INTEGER DEFAULT 0',
-            'risk_score': 'REAL DEFAULT 0',
-            'enrichment_data': 'TEXT DEFAULT "{}"',
-            'occurrence_count': 'INTEGER DEFAULT 1'
-        }
-        for col, col_type in entity_columns.items():
-            if col not in existing_entities:
-                try:
-                    conn.execute(f'ALTER TABLE entities ADD COLUMN {col} {col_type}')
-                except:
-                    pass
-    
+        # Migration entities (si la table existe)
+        try:
+            existing_entities = self._get_existing_columns(conn, 'entities')
+            entity_columns = {
+                'subtype': 'TEXT DEFAULT ""',
+                'confidence': 'REAL DEFAULT 0.5',
+                'validated': 'INTEGER DEFAULT 0',
+                'enriched': 'INTEGER DEFAULT 0',
+                'risk_score': 'REAL DEFAULT 0',
+                'enrichment_data': 'TEXT DEFAULT "{}"',
+                'occurrence_count': 'INTEGER DEFAULT 1'
+            }
+            for col, col_type in entity_columns.items():
+                if col not in existing_entities:
+                    try:
+                        conn.execute(f'ALTER TABLE entities ADD COLUMN {col} {col_type}')
+                    except:
+                        pass
+        except:
+            pass  # Table entities n'existe pas encore
+
     def _get_existing_columns(self, conn, table: str) -> Set[str]:
         """Retourne les colonnes existantes."""
         cursor = conn.execute(f"PRAGMA table_info({table})")
@@ -948,7 +970,7 @@ class DatabaseManager:
                   profile.get('delay_ms', 1000), profile.get('max_pages', 100),
                   profile.get('priority_boost', 0), profile.get('notes', '')))
     
-    def get_domains_list(self, status: str = None, limit: int = 100) -> List[Dict]:
+    def get_domains_list(self, status: str = None, limit: int = 100) ? List[Dict]:
         """Liste les domaines avec leurs stats."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
@@ -1026,7 +1048,7 @@ class DatabaseManager:
                 'total_errors': server_errors + client_errors
             }
     
-    def get_entities(self, entity_type: str = None, limit: int = 100) -> List[Dict]:
+    def get_entities(self, entity_type: str = None, limit: int = 100) ? List[Dict]:
         """Recupere les entites extraites."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
@@ -1055,7 +1077,7 @@ class DatabaseManager:
     
     # ========== ALERTES ==========
     
-    def get_alerts(self, limit: int = 50, unread_only: bool = False, severity: str = None) -> List[Dict]:
+    def get_alerts(self, limit: int = 50, unread_only: bool = False, severity: str = None) ? List[Dict]:
         """Recupere les alertes."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
@@ -1272,7 +1294,7 @@ class DatabaseManager:
             """, (f'-{days} days',))
             return [{'date': r[0], 'total': r[1], 'success': r[2], 'domains': r[3]} for r in cursor.fetchall()]
     
-    def get_pending_urls(self, limit: int = 1000) -> List[tuple]:
+    def get_pending_urls(self, limit: int = 1000) ? List[tuple]:
         with self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT url, depth FROM intel WHERE status = 0 OR status >= 400
@@ -1280,11 +1302,11 @@ class DatabaseManager:
             """, (limit,))
             return cursor.fetchall()
     
-    def get_high_risk_sites(self, min_score: int = 50, limit: int = 50) -> List[Dict]:
+    def get_high_risk_sites(self, min_score: int = 50, limit: int = 50) ? List[Dict]:
         results, _ = self.search_fulltext('', {'min_risk': min_score}, limit)
         return results
     
-    def get_successful_urls_for_recrawl(self, min_depth: int = 0) -> List[str]:
+    def get_successful_urls_for_recrawl(self, min_depth: int = 0) ? List[str]:
         with self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT url FROM intel WHERE status = 200 AND depth >= ?

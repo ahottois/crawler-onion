@@ -375,6 +375,7 @@ def render_updates(update_status: Dict[str, Any], daemon_status: Dict[str, Any],
     daemon_enabled = daemon_status.get('enabled', False)
     systemd_available = daemon_status.get('systemd_available', False)
     daemon_logs = daemon_status.get('recent_logs', '')
+    daemon_user = html.escape(daemon_status.get('user', 'ubuntu'))
     
     # Daemon status badge
     if not systemd_available:
@@ -392,51 +393,36 @@ def render_updates(update_status: Dict[str, Any], daemon_status: Dict[str, Any],
         date_str = commit.get("date", "")
         if date_str and len(date_str) >= 10:
             date_str = date_str[:10]
-        commits_html += f'<li><span class="commit-sha">{html.escape(str(commit.get("sha", "")))}</span> <span class="commit-date">{html.escape(date_str)}</span><br>{html.escape(str(commit.get("message", "")))}</li>'
+        commits_html += '<li><span class="commit-sha">' + html.escape(str(commit.get("sha", ""))) + '</span> <span class="commit-date">' + html.escape(date_str) + '</span><br>' + html.escape(str(commit.get("message", ""))) + '</li>'
     if not commits_html:
         commits_html = '<li style="color: #888;">Utilisez "Verifier" pour charger les commits</li>'
     
-    # Update status card - gerer l'erreur
+    # Update status card
     if error:
-        update_status_html = f'<div class="stat-card warning"><h3>STATUT</h3><div class="value" style="font-size: 12px;">Cliquez Verifier</div></div>'
+        update_status_html = '<div class="stat-card warning"><h3>STATUT</h3><div class="value" style="font-size: 12px;">Cliquez Verifier</div></div>'
     elif update_available:
         if commits_behind > 0:
-            update_status_html = f'<div class="stat-card alert"><h3>EN RETARD</h3><div class="value" style="font-size: 18px;">{commits_behind} commit(s)</div></div>'
+            update_status_html = '<div class="stat-card alert"><h3>EN RETARD</h3><div class="value" style="font-size: 18px;">' + str(commits_behind) + ' commit(s)</div></div>'
         else:
-            update_status_html = f'<div class="stat-card alert"><h3>MISE A JOUR</h3><div class="value" style="font-size: 18px;">Disponible</div></div>'
+            update_status_html = '<div class="stat-card alert"><h3>MISE A JOUR</h3><div class="value" style="font-size: 18px;">Disponible</div></div>'
     else:
         update_status_html = '<div class="stat-card info"><h3>STATUT</h3><div class="value" style="font-size: 18px;">A jour</div></div>'
     
     # Daemon controls
     if daemon_installed:
-        daemon_controls = f'''
-        <button class="btn btn-primary" onclick="controlDaemon('start')" {"disabled" if daemon_active else ""}>Demarrer</button>
-        <button class="btn btn-warning" onclick="controlDaemon('stop')" {"disabled" if not daemon_active else ""}>Arreter</button>
-        <button class="btn btn-purple" onclick="controlDaemon('restart')">Redemarrer</button>
-        <button class="btn btn-danger" onclick="uninstallDaemon()">Desinstaller</button>
-        '''
+        start_disabled = 'disabled' if daemon_active else ''
+        stop_disabled = 'disabled' if not daemon_active else ''
+        daemon_controls = '<button class="btn btn-primary" onclick="controlDaemon(\'start\')" ' + start_disabled + '>Demarrer</button>'
+        daemon_controls += '<button class="btn btn-warning" onclick="controlDaemon(\'stop\')" ' + stop_disabled + '>Arreter</button>'
+        daemon_controls += '<button class="btn btn-purple" onclick="controlDaemon(\'restart\')">Redemarrer</button>'
+        daemon_controls += '<button class="btn btn-danger" onclick="uninstallDaemon()">Desinstaller</button>'
     else:
         daemon_controls = '<button id="installDaemonBtn" class="btn btn-purple" onclick="installDaemon()">Installer comme Service</button>'
     
-    page_content = f'''
-    <div id="message" class="message"></div>
-    
-    <div class="stats-grid">
-        <div class="stat-card"><h3>VERSION</h3><div class="value" style="font-size: 22px;">v{html.escape(version)}</div></div>
-        <div class="stat-card"><h3>DISTANTE</h3><div class="value" style="font-size: 22px;">v{html.escape(str(latest))}</div></div>
-        {update_status_html}
-        <div class="stat-card"><h3>SERVICE</h3><div class="value" style="font-size: 14px;">{daemon_badge}</div></div>
-    </div>
-    
-    <!-- Section Daemon -->
-    <div class="control-panel daemon">
-        <h2>Installation comme Service (Daemon)</h2>
-        <div class="info-box">
-            <p>Installez le crawler comme service systemd pour qu'il demarre automatiquement au boot du serveur.</p>
-            <p>Service: <code>crawler-onion</code> | Utilisateur: <code>{html.escape(daemon_status.get('user', 'ubuntu'))}</code></p>
-        </div>
-        
-        {"" if daemon_installed else '''
+    # Port/Workers form (only if not installed)
+    port_workers_form = ""
+    if not daemon_installed:
+        port_workers_form = '''
         <div class="form-row">
             <div class="form-group" style="flex: 1;">
                 <label>Port Web</label>
@@ -446,27 +432,56 @@ def render_updates(update_status: Dict[str, Any], daemon_status: Dict[str, Any],
                 <label>Workers</label>
                 <input type="number" id="daemonWorkers" value="15" min="1" max="50">
             </div>
-        </div>
-        '''}
-        
-        <div class="form-row">
-            <div class="form-group">
-                {daemon_controls}
-            </div>
-        </div>
-        <div id="daemonResult" style="margin-top: 10px;"></div>
-        
-        {"<p style='margin-top: 10px; color: #888; font-size: 11px;'>Auto-start: " + ("Oui" if daemon_enabled else "Non") + "</p>" if daemon_installed else ""}
-    </div>
+        </div>'''
     
-    {f"""
+    # Auto-start info
+    autostart_info = ""
+    if daemon_installed:
+        autostart_text = "Oui" if daemon_enabled else "Non"
+        autostart_info = '<p style="margin-top: 10px; color: #888; font-size: 11px;">Auto-start: ' + autostart_text + '</p>'
+    
+    # Logs section
+    logs_section = ""
+    if daemon_installed:
+        logs_content = html.escape(daemon_logs) if daemon_logs else "Aucun log disponible"
+        logs_section = '''
     <div class="section">
         <div class="section-header"><span>Logs du Service</span><button class="btn btn-small btn-primary" onclick="refreshLogs()">Actualiser</button></div>
         <div class="section-content" style="max-height: none;">
-            <div class="log-viewer" id="daemonLogs">{html.escape(daemon_logs) if daemon_logs else "Aucun log disponible"}</div>
+            <div class="log-viewer" id="daemonLogs">''' + logs_content + '''</div>
         </div>
+    </div>'''
+    
+    # Changelog section
+    changelog_content = '<div class="changelog">' + html.escape(changelog) + '</div>' if changelog else '<p style="color: #888;">Aucune note disponible</p>'
+    
+    page_content = '''
+    <div id="message" class="message"></div>
+    
+    <div class="stats-grid">
+        <div class="stat-card"><h3>VERSION</h3><div class="value" style="font-size: 22px;">v''' + html.escape(version) + '''</div></div>
+        <div class="stat-card"><h3>DISTANTE</h3><div class="value" style="font-size: 22px;">v''' + html.escape(str(latest)) + '''</div></div>
+        ''' + update_status_html + '''
+        <div class="stat-card"><h3>SERVICE</h3><div class="value" style="font-size: 14px;">''' + daemon_badge + '''</div></div>
     </div>
-    """ if daemon_installed else ""}
+    
+    <!-- Section Daemon -->
+    <div class="control-panel daemon">
+        <h2>Installation comme Service (Daemon)</h2>
+        <div class="info-box">
+            <p>Installez le crawler comme service systemd pour qu'il demarre automatiquement au boot du serveur.</p>
+            <p>Service: <code>crawler-onion</code> | Utilisateur: <code>''' + daemon_user + '''</code></p>
+        </div>
+        ''' + port_workers_form + '''
+        <div class="form-row">
+            <div class="form-group">
+                ''' + daemon_controls + '''
+            </div>
+        </div>
+        <div id="daemonResult" style="margin-top: 10px;"></div>
+        ''' + autostart_info + '''
+    </div>
+    ''' + logs_section + '''
     
     <!-- Section Mises a jour -->
     <div class="control-panel">
@@ -489,12 +504,12 @@ def render_updates(update_status: Dict[str, Any], daemon_status: Dict[str, Any],
         <div class="section">
             <div class="section-header">Notes de version</div>
             <div class="section-content" style="max-height: none;">
-                {f'<div class="changelog">{html.escape(changelog)}</div>' if changelog else '<p style="color: #888;">Aucune note disponible</p>'}
+                ''' + changelog_content + '''
             </div>
         </div>
         <div class="section">
             <div class="section-header">Commits recents</div>
-            <div class="section-content" style="max-height: none;"><ul class="commit-list">{commits_html}</ul></div>
+            <div class="section-content" style="max-height: none;"><ul class="commit-list">''' + commits_html + '''</ul></div>
         </div>
     </div>
     

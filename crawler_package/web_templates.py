@@ -22,15 +22,17 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         body {{ font-family: 'Courier New', monospace; background: #0a0a0a; color: #00ff00; padding: 20px; min-height: 100vh; }}
         .container {{ max-width: 1600px; margin: 0 auto; }}
         h1 {{ color: #00ff00; text-align: center; margin-bottom: 30px; text-shadow: 0 0 10px #00ff00; }}
-        .nav-tabs {{ display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap; }}
-        .nav-tab {{ padding: 10px 25px; background: #111; border: 1px solid #333; color: #888; cursor: pointer; border-radius: 5px; font-size: 14px; text-decoration: none; }}
+        .nav-tabs {{ display: flex; gap: 8px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap; }}
+        .nav-tab {{ padding: 8px 16px; background: #111; border: 1px solid #333; color: #888; cursor: pointer; border-radius: 5px; font-size: 13px; text-decoration: none; }}
         .nav-tab:hover, .nav-tab.active {{ background: #00ff00; color: #000; border-color: #00ff00; }}
         .nav-tab.update-available {{ background: #ff4444; color: #fff; border-color: #ff4444; animation: pulse 2s infinite; }}
+        .nav-tab.alerts {{ position: relative; }}
+        .nav-tab .badge {{ position: absolute; top: -5px; right: -5px; background: #ff4444; color: #fff; border-radius: 50%; padding: 2px 6px; font-size: 10px; }}
         @keyframes pulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.7; }} }}
-        .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 20px; }}
-        .stat-card {{ background: #111; border: 1px solid #00ff00; padding: 15px; text-align: center; border-radius: 5px; }}
-        .stat-card h3 {{ color: #888; font-size: 12px; margin-bottom: 8px; }}
-        .stat-card .value {{ font-size: 28px; color: #00ff00; }}
+        .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }}
+        .stat-card {{ background: #111; border: 1px solid #00ff00; padding: 12px; text-align: center; border-radius: 5px; }}
+        .stat-card h3 {{ color: #888; font-size: 11px; margin-bottom: 6px; }}
+        .stat-card .value {{ font-size: 24px; color: #00ff00; }}
         .stat-card.alert .value {{ color: #ff4444; }}
         .stat-card.warning .value {{ color: #ffaa00; }}
         .stat-card.info .value {{ color: #00aaff; }}
@@ -38,18 +40,18 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .section-header {{ background: #1a1a1a; padding: 12px 15px; border-bottom: 1px solid #333; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }}
         .section-content {{ padding: 15px; max-height: 350px; overflow-y: auto; }}
         table {{ width: 100%; border-collapse: collapse; }}
-        th, td {{ padding: 8px 10px; text-align: left; border-bottom: 1px solid #222; font-size: 13px; }}
+        th, td {{ padding: 8px 10px; text-align: left; border-bottom: 1px solid #222; font-size: 12px; }}
         th {{ color: #888; }}
         tr:hover {{ background: #1a1a1a; }}
-        .tag {{ display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin: 1px; }}
+        .tag {{ display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin: 1px; }}
         .tag-secret {{ background: #ff4444; color: #fff; }}
         .tag-crypto {{ background: #9933ff; color: #fff; }}
         .tag-social {{ background: #00aaff; color: #fff; }}
         .tag-email {{ background: #ffaa00; color: #000; }}
-        .url {{ color: #00ff00; word-break: break-all; font-size: 12px; }}
+        .url {{ color: #00ff00; word-break: break-all; font-size: 11px; }}
         .domain {{ color: #888; }}
         .title {{ color: #fff; }}
-        .footer {{ text-align: center; padding: 20px; color: #444; font-size: 12px; }}
+        .footer {{ text-align: center; padding: 20px; color: #444; font-size: 11px; }}
         .status-running {{ color: #00ff00; animation: blink 1s infinite; }}
         .status-stopped {{ color: #ff4444; }}
         @keyframes blink {{ 50% {{ opacity: 0.5; }} }}
@@ -58,11 +60,11 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .control-panel.daemon {{ border-color: #9933ff; }}
         .control-panel.daemon h2 {{ color: #9933ff; }}
         .form-row {{ display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }}
-        .form-group {{ flex: 1; min-width: 200px; margin-bottom: 10px; }}
+        .form-group {{ flex: 1; min-width: 150px; margin-bottom: 10px; }}
         .form-group label {{ display: block; color: #888; margin-bottom: 5px; font-size: 11px; }}
         .form-group input, .form-group textarea, .form-group select {{ width: 100%; padding: 8px; background: #0a0a0a; border: 1px solid #333; color: #00ff00; font-family: 'Courier New', monospace; border-radius: 3px; font-size: 12px; }}
         .form-group textarea {{ height: 60px; resize: vertical; }}
-        .btn {{ padding: 8px 15px; border: none; border-radius: 3px; cursor: pointer; font-family: 'Courier New', monospace; font-weight: bold; font-size: 12px; margin-right: 5px; margin-bottom: 5px; }}
+        .btn {{ padding: 8px 15px; border: none; border-radius: 3px; cursor: pointer; font-family: 'Courier New', monospace; font-weight: bold; font-size: 11px; margin-right: 5px; margin-bottom: 5px; }}
         .btn-primary {{ background: #00ff00; color: #000; }}
         .btn-primary:hover {{ background: #00cc00; }}
         .btn-warning {{ background: #ffaa00; color: #000; }}
@@ -76,34 +78,34 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .message {{ padding: 8px; border-radius: 3px; margin-bottom: 10px; display: none; font-size: 12px; }}
         .message.success {{ background: #1a3a1a; border: 1px solid #00ff00; color: #00ff00; display: block; }}
         .message.error {{ background: #3a1a1a; border: 1px solid #ff4444; color: #ff4444; display: block; }}
-        .grid-2 {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }}
+        .grid-2 {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }}
         .trust-score {{ display: inline-block; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; }}
         .trust-high {{ background: #00ff00; color: #000; }}
         .trust-medium {{ background: #ffaa00; color: #000; }}
         .trust-low {{ background: #ff4444; color: #fff; }}
-        .search-result {{ background: #1a1a1a; border: 1px solid #333; border-radius: 5px; padding: 15px; margin-bottom: 10px; }}
+        .search-result {{ background: #1a1a1a; border: 1px solid #333; border-radius: 5px; padding: 12px; margin-bottom: 10px; }}
         .search-result:hover {{ border-color: #00ff00; }}
-        .search-result-title {{ color: #00ff00; font-size: 14px; margin-bottom: 5px; }}
-        .search-result-url {{ color: #888; font-size: 11px; word-break: break-all; }}
-        .search-result-meta {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }}
-        .refresh-info {{ text-align: center; color: #444; margin-bottom: 15px; font-size: 12px; }}
+        .search-result-title {{ color: #00ff00; font-size: 13px; margin-bottom: 5px; }}
+        .search-result-url {{ color: #888; font-size: 10px; word-break: break-all; }}
+        .search-result-meta {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }}
+        .refresh-info {{ text-align: center; color: #444; margin-bottom: 15px; font-size: 11px; }}
         .update-banner {{ background: linear-gradient(90deg, #ff4444, #ff6666); color: #fff; padding: 10px 20px; border-radius: 5px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }}
-        .changelog {{ background: #0a0a0a; border: 1px solid #333; border-radius: 5px; padding: 15px; margin-top: 15px; white-space: pre-wrap; font-size: 12px; color: #888; max-height: 200px; overflow-y: auto; }}
+        .changelog {{ background: #0a0a0a; border: 1px solid #333; border-radius: 5px; padding: 15px; margin-top: 15px; white-space: pre-wrap; font-size: 11px; color: #888; max-height: 200px; overflow-y: auto; }}
         .commit-list {{ list-style: none; }}
         .commit-list li {{ padding: 8px 0; border-bottom: 1px solid #222; }}
         .commit-list li:last-child {{ border-bottom: none; }}
         .commit-sha {{ color: #00aaff; font-family: monospace; }}
-        .commit-date {{ color: #666; font-size: 11px; }}
-        .loading {{ display: inline-block; width: 20px; height: 20px; border: 2px solid #333; border-top-color: #00ff00; border-radius: 50%; animation: spin 1s linear infinite; }}
+        .commit-date {{ color: #666; font-size: 10px; }}
+        .loading {{ display: inline-block; width: 16px; height: 16px; border: 2px solid #333; border-top-color: #00ff00; border-radius: 50%; animation: spin 1s linear infinite; }}
         @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
-        .daemon-status {{ display: inline-block; padding: 4px 12px; border-radius: 15px; font-size: 12px; font-weight: bold; }}
+        .daemon-status {{ display: inline-block; padding: 4px 12px; border-radius: 15px; font-size: 11px; font-weight: bold; }}
         .daemon-status.active {{ background: #00ff00; color: #000; }}
         .daemon-status.inactive {{ background: #ff4444; color: #fff; }}
         .daemon-status.not-installed {{ background: #666; color: #fff; }}
-        .log-viewer {{ background: #000; border: 1px solid #333; border-radius: 5px; padding: 15px; font-family: monospace; font-size: 11px; color: #00ff00; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }}
-        .info-box {{ background: #1a1a2a; border: 1px solid #9933ff; border-radius: 5px; padding: 15px; margin-bottom: 15px; }}
-        .info-box p {{ color: #888; font-size: 12px; margin-bottom: 8px; }}
-        .info-box code {{ background: #0a0a0a; padding: 2px 6px; border-radius: 3px; color: #00ff00; }}
+        .log-viewer {{ background: #000; border: 1px solid #333; border-radius: 5px; padding: 15px; font-family: monospace; font-size: 10px; color: #00ff00; max-height: 250px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }}
+        .info-box {{ background: #1a1a2a; border: 1px solid #9933ff; border-radius: 5px; padding: 12px; margin-bottom: 15px; }}
+        .info-box p {{ color: #888; font-size: 11px; margin-bottom: 6px; }}
+        .info-box code {{ background: #0a0a0a; padding: 2px 6px; border-radius: 3px; color: #00ff00; font-size: 11px; }}
     </style>
 </head>
 <body>
@@ -112,7 +114,10 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         <div class="nav-tabs">
             <a href="/" class="nav-tab {nav_dashboard}">Dashboard</a>
             <a href="/search" class="nav-tab {nav_search}">Recherche</a>
-            <a href="/trusted" class="nav-tab {nav_trusted}">Sites Fiables</a>
+            <a href="/trusted" class="nav-tab {nav_trusted}">Sites</a>
+            <a href="/alerts" class="nav-tab">Alertes</a>
+            <a href="/export" class="nav-tab">Export</a>
+            <a href="/settings" class="nav-tab">Parametres</a>
             <a href="/updates" class="nav-tab {nav_updates}">Systeme</a>
         </div>
         {update_banner}
@@ -179,48 +184,26 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             .then(r => r.json())
             .then(data => {{
                 if (btn) btn.disabled = false;
-                if (status) {{ status.innerHTML = '<span style="color: ' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span><pre style="color: #888; font-size: 11px;">' + (data.details || '') + '</pre>'; }}
+                if (status) {{ status.innerHTML = '<span style="color: ' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span><pre style="color: #888; font-size: 10px;">' + (data.details || '') + '</pre>'; }}
             }})
             .catch(e => {{ if (btn) btn.disabled = false; if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur</span>'; }});
         }}
         function installDaemon() {{
             const port = document.getElementById('daemonPort').value || 4587;
             const workers = document.getElementById('daemonWorkers').value || 15;
-            if (!confirm('Installer le crawler comme service systemd?\\n\\nPort: ' + port + '\\nWorkers: ' + workers)) return;
+            if (!confirm('Installer le crawler comme service systemd?')) return;
             const btn = document.getElementById('installDaemonBtn'); const status = document.getElementById('daemonResult');
             if (btn) btn.disabled = true; if (status) status.innerHTML = '<span class="loading"></span> Installation...';
             fetch('/api/daemon-install', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify({{ web_port: parseInt(port), workers: parseInt(workers) }}) }})
             .then(r => r.json()).then(data => {{
                 if (btn) btn.disabled = false;
-                if (status) {{ status.innerHTML = '<span style="color: ' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span><br><pre style="color: #888; font-size: 11px;">' + (data.details || '') + '</pre>'; }}
+                if (status) {{ status.innerHTML = '<span style="color: ' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>'; }}
                 if (data.success) setTimeout(() => location.reload(), 2000);
             }}).catch(e => {{ if (btn) btn.disabled = false; if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur</span>'; }});
         }}
-        function uninstallDaemon() {{
-            if (!confirm('Desinstaller le service systemd?')) return;
-            const status = document.getElementById('daemonResult');
-            if (status) status.innerHTML = '<span class="loading"></span> Desinstallation...';
-            fetch('/api/daemon-uninstall', {{ method: 'POST' }}).then(r => r.json()).then(data => {{
-                if (status) {{ status.innerHTML = '<span style="color: ' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>'; }}
-                if (data.success) setTimeout(() => location.reload(), 2000);
-            }}).catch(e => {{ if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur</span>'; }});
-        }}
-        function controlDaemon(action) {{
-            const status = document.getElementById('daemonResult');
-            if (status) status.innerHTML = '<span class="loading"></span> ' + action + '...';
-            fetch('/api/daemon-control', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify({{ action: action }}) }})
-            .then(r => r.json()).then(data => {{
-                if (status) {{ status.innerHTML = '<span style="color: ' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>'; }}
-                setTimeout(() => location.reload(), 1500);
-            }}).catch(e => {{ if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur</span>'; }});
-        }}
-        function refreshLogs() {{
-            const logViewer = document.getElementById('daemonLogs');
-            if (!logViewer) return;
-            fetch('/api/daemon-logs?lines=50').then(r => r.json()).then(data => {{
-                if (data.logs) logViewer.textContent = data.logs;
-            }});
-        }}
+        function uninstallDaemon() {{ if (!confirm('Desinstaller?')) return; fetch('/api/daemon-uninstall', {{ method: 'POST' }}).then(r => r.json()).then(data => {{ document.getElementById('daemonResult').innerHTML = '<span style="color: ' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>'; if (data.success) setTimeout(() => location.reload(), 2000); }}); }}
+        function controlDaemon(action) {{ const status = document.getElementById('daemonResult'); if (status) status.innerHTML = '<span class="loading"></span>'; fetch('/api/daemon-control', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify({{ action: action }}) }}).then(r => r.json()).then(data => {{ if (status) status.innerHTML = '<span style="color: ' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>'; setTimeout(() => location.reload(), 1500); }}); }}
+        function refreshLogs() {{ const log = document.getElementById('daemonLogs'); if (!log) return; fetch('/api/daemon-logs?lines=50').then(r => r.json()).then(data => {{ if (data.logs) log.textContent = data.logs; }}); }}
         if (window.location.pathname === '/') setTimeout(() => location.reload(), 30000);
     </script>
 </body>
@@ -350,7 +333,7 @@ def render_trusted(data: Dict[str, Any], port: int, update_status: Dict[str, Any
         <div class="stat-card warning"><h3>CONFIANCE MOYENNE</h3><div class="value">{data['medium_trust']}</div></div>
         <div class="stat-card alert"><h3>FAIBLE CONFIANCE</h3><div class="value">{data['low_trust']}</div></div>
     </div>
-    <div class="section"><div class="section-header">Sites les Plus Fiables</div><div class="section-content" style="max-height: none;"><p style="color: #888; margin-bottom: 15px; font-size: 12px;">Score calcule selon: pages crawlees, taux de succes, presence de donnees structurees.</p>{trusted_html or '<div style="color:#888;">Aucun site analyse</div>'}</div></div>
+    <div class="section"><div class="section-header">Sites les Plus Fiables</div><div class="section-content" style="max-height: none;"><p style="color: #888; margin-bottom: 15px; font-size: 11px;">Score calcule selon: pages crawlees, taux de succes, presence de donnees structurees.</p>{trusted_html or '<div style="color:#888;">Aucun site analyse</div>'}</div></div>
     <div class="section"><div class="section-header">Tous les Domaines Classes</div><div class="section-content" style="max-height: 500px;"><table><thead><tr><th>Domaine</th><th>Score</th><th>Pages</th><th>Succes</th><th>Intel</th></tr></thead><tbody>{domain_table_html or '<tr><td colspan="5">Aucune donnee</td></tr>'}</tbody></table></div></div>'''
     
     return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
@@ -531,3 +514,329 @@ tail -f ~/crawler-onion/crawler.log</div>
     
     return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
         nav_dashboard='', nav_search='', nav_trusted='', nav_updates='active')
+
+
+def render_alerts(alerts: List[Dict], port: int) -> str:
+    """Genere la page des alertes."""
+    version = "6.5.0"
+    
+    alerts_html = ""
+    unread_count = 0
+    for alert in alerts:
+        severity_class = 'alert' if alert.get('severity') == 'danger' else ('warning' if alert.get('severity') == 'warning' else 'info')
+        read_class = '' if alert.get('read') else 'unread'
+        if not alert.get('read'):
+            unread_count += 1
+        
+        alerts_html += '''
+        <div class="alert-item ''' + read_class + '''">
+            <div class="alert-header">
+                <span class="alert-type tag tag-''' + alert.get('severity', 'info') + '''">''' + html.escape(str(alert.get('type', ''))) + '''</span>
+                <span class="alert-date">''' + html.escape(str(alert.get('created_at', ''))[:19]) + '''</span>
+            </div>
+            <div class="alert-message">''' + html.escape(str(alert.get('message', ''))) + '''</div>
+            <div class="alert-url">''' + html.escape(str(alert.get('url', ''))[:80]) + '''</div>
+        </div>'''
+    
+    if not alerts_html:
+        alerts_html = '<div style="color: #888; text-align: center; padding: 40px;">Aucune alerte</div>'
+    
+    page_content = '''
+    <div id="message" class="message"></div>
+    
+    <div class="stats-grid">
+        <div class="stat-card"><h3>TOTAL ALERTES</h3><div class="value">''' + str(len(alerts)) + '''</div></div>
+        <div class="stat-card alert"><h3>NON LUES</h3><div class="value">''' + str(unread_count) + '''</div></div>
+    </div>
+    
+    <div class="control-panel">
+        <h2>Gestion des Alertes</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <button class="btn btn-primary" onclick="markAlertsRead()">Marquer tout comme lu</button>
+                <button class="btn btn-danger" onclick="clearAlerts()">Supprimer tout</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <div class="section-header">Alertes Recentes</div>
+        <div class="section-content" style="max-height: none;">
+            ''' + alerts_html + '''
+        </div>
+    </div>
+    
+    <script>
+    function markAlertsRead() {
+        fetch('/api/mark-alerts-read', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => { showMessage(data.message, data.success ? 'success' : 'error'); setTimeout(() => location.reload(), 1000); });
+    }
+    function clearAlerts() {
+        if (!confirm('Supprimer toutes les alertes?')) return;
+        fetch('/api/clear-alerts', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => { showMessage(data.message, data.success ? 'success' : 'error'); setTimeout(() => location.reload(), 1000); });
+    }
+    </script>
+    
+    <style>
+    .alert-item { background: #1a1a1a; border: 1px solid #333; border-radius: 5px; padding: 15px; margin-bottom: 10px; }
+    .alert-item.unread { border-left: 3px solid #ff4444; }
+    .alert-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+    .alert-type { text-transform: uppercase; }
+    .alert-date { color: #666; font-size: 10px; }
+    .alert-message { color: #fff; margin-bottom: 5px; }
+    .alert-url { color: #888; font-size: 10px; word-break: break-all; }
+    .tag-danger { background: #ff4444; color: #fff; }
+    .tag-warning { background: #ffaa00; color: #000; }
+    .tag-info { background: #00aaff; color: #fff; }
+    </style>'''
+    
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
+
+
+def render_export(stats: Dict[str, Any], port: int) -> str:
+    """Genere la page d'export."""
+    version = "6.5.0"
+    
+    # Timeline chart data
+    timeline = stats.get('timeline', [])
+    timeline_labels = [t['date'] for t in reversed(timeline)]
+    timeline_values = [t['success'] for t in reversed(timeline)]
+    
+    # High risk sites
+    high_risk = stats.get('high_risk', [])
+    high_risk_html = ""
+    for site in high_risk[:10]:
+        high_risk_html += '''
+        <tr>
+            <td class="domain">''' + html.escape(str(site.get('domain', ''))[:30]) + '''</td>
+            <td>''' + html.escape(str(site.get('title', ''))[:40]) + '''</td>
+            <td class="risk-score">''' + str(site.get('risk_score', 0)) + '''</td>
+        </tr>'''
+    
+    if not high_risk_html:
+        high_risk_html = '<tr><td colspan="3" style="color: #888;">Aucun site a haut risque</td></tr>'
+    
+    page_content = '''
+    <div id="message" class="message"></div>
+    
+    <div class="stats-grid">
+        <div class="stat-card"><h3>URLS TOTALES</h3><div class="value">''' + str(stats.get('total', 0)) + '''</div></div>
+        <div class="stat-card info"><h3>AVEC INTEL</h3><div class="value">''' + str(stats.get('with_secrets', 0) + stats.get('with_crypto', 0)) + '''</div></div>
+        <div class="stat-card warning"><h3>EMAILS</h3><div class="value">''' + str(stats.get('with_emails', 0)) + '''</div></div>
+        <div class="stat-card alert"><h3>RISQUE MOY.</h3><div class="value">''' + str(stats.get('avg_risk', 0)) + '''</div></div>
+    </div>
+    
+    <div class="control-panel">
+        <h2>Exporter les Donnees</h2>
+        <div class="info-box">
+            <p>Exportez les resultats du crawl dans differents formats pour analyse externe.</p>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <button class="btn btn-primary" onclick="exportData('json')">Export JSON</button>
+                <button class="btn btn-primary" onclick="exportData('csv')">Export CSV</button>
+                <button class="btn btn-warning" onclick="exportData('emails')">Export Emails</button>
+                <button class="btn btn-purple" onclick="exportData('crypto')">Export Crypto</button>
+            </div>
+        </div>
+        <div id="exportResult" style="margin-top: 15px;"></div>
+    </div>
+    
+    <div class="grid-2">
+        <div class="section">
+            <div class="section-header">Sites a Haut Risque (Score >= 50)</div>
+            <div class="section-content" style="max-height: none;">
+                <table>
+                    <thead><tr><th>Domaine</th><th>Titre</th><th>Risk</th></tr></thead>
+                    <tbody>''' + high_risk_html + '''</tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-header">Activite (7 derniers jours)</div>
+            <div class="section-content" style="max-height: none;">
+                <div class="chart-container">
+                    ''' + _render_simple_chart(timeline_labels, timeline_values) + '''
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    function exportData(type) {
+        const status = document.getElementById('exportResult');
+        status.innerHTML = '<span class="loading"></span> Export en cours...';
+        
+        fetch('/api/export', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({type: type})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                status.innerHTML = '<span style="color: #00ff00;">' + data.message + '</span><br><code>' + (data.file || '') + '</code>';
+            } else {
+                status.innerHTML = '<span style="color: #ff4444;">' + data.message + '</span>';
+            }
+        })
+        .catch(e => {
+            status.innerHTML = '<span style="color: #ff4444;">Erreur</span>';
+        });
+    }
+    </script>
+    
+    <style>
+    .risk-score { color: #ff4444; font-weight: bold; }
+    .chart-container { padding: 20px; }
+    .chart-bar { display: inline-block; width: 30px; margin: 0 5px; background: #00ff00; vertical-align: bottom; }
+    .chart-label { font-size: 10px; color: #888; text-align: center; }
+    </style>'''
+    
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
+
+
+def _render_simple_chart(labels: List[str], values: List[int]) -> str:
+    """Genere un graphique simple en HTML/CSS."""
+    if not values:
+        return '<p style="color: #888;">Pas de donnees</p>'
+    
+    max_val = max(values) if values else 1
+    chart_html = '<div style="display: flex; align-items: flex-end; height: 150px; gap: 5px;">'
+    
+    for i, (label, value) in enumerate(zip(labels, values)):
+        height = int((value / max_val) * 120) if max_val > 0 else 0
+        chart_html += '<div style="text-align: center;">'
+        chart_html += '<div style="color: #00ff00; font-size: 10px;">' + str(value) + '</div>'
+        chart_html += '<div style="width: 30px; height: ' + str(height) + 'px; background: linear-gradient(to top, #00ff00, #00aa00); border-radius: 3px 3px 0 0;"></div>'
+        chart_html += '<div style="font-size: 9px; color: #666; margin-top: 5px;">' + html.escape(label[-5:]) + '</div>'
+        chart_html += '</div>'
+    
+    chart_html += '</div>'
+    return chart_html
+
+
+def render_settings(domain_lists: Dict, port: int) -> str:
+    """Genere la page des parametres."""
+    version = "6.5.0"
+    
+    blacklist_html = ""
+    for item in domain_lists.get('blacklist', [])[:20]:
+        domain_escaped = html.escape(str(item.get('domain', '')))
+        reason_escaped = html.escape(str(item.get('reason', ''))[:50])
+        blacklist_html += '<tr>'
+        blacklist_html += '<td class="domain">' + domain_escaped + '</td>'
+        blacklist_html += '<td>' + reason_escaped + '</td>'
+        blacklist_html += '<td><button class="btn btn-danger btn-small" onclick="removeFromList(\'' + domain_escaped + '\')">X</button></td>'
+        blacklist_html += '</tr>'
+    
+    whitelist_html = ""
+    for item in domain_lists.get('whitelist', [])[:20]:
+        domain_escaped = html.escape(str(item.get('domain', '')))
+        reason_escaped = html.escape(str(item.get('reason', ''))[:50])
+        whitelist_html += '<tr>'
+        whitelist_html += '<td class="domain">' + domain_escaped + '</td>'
+        whitelist_html += '<td>' + reason_escaped + '</td>'
+        whitelist_html += '<td><button class="btn btn-danger btn-small" onclick="removeFromList(\'' + domain_escaped + '\')">X</button></td>'
+        whitelist_html += '</tr>'
+    
+    blacklist_count = str(len(domain_lists.get('blacklist', [])))
+    whitelist_count = str(len(domain_lists.get('whitelist', [])))
+    
+    page_content = '''
+    <div id="message" class="message"></div>
+    
+    <div class="control-panel">
+        <h2>Ajouter un Domaine</h2>
+        <div class="form-row">
+            <div class="form-group" style="flex: 2;">
+                <label>Domaine (.onion)</label>
+                <input type="text" id="domainInput" placeholder="exemple.onion">
+            </div>
+            <div class="form-group" style="flex: 1;">
+                <label>Liste</label>
+                <select id="listType">
+                    <option value="blacklist">Blacklist</option>
+                    <option value="whitelist">Whitelist</option>
+                </select>
+            </div>
+            <div class="form-group" style="flex: 2;">
+                <label>Raison (optionnel)</label>
+                <input type="text" id="reasonInput" placeholder="Raison...">
+            </div>
+            <div class="form-group" style="flex: 0;">
+                <button class="btn btn-primary" onclick="addToList()">Ajouter</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="grid-2">
+        <div class="section">
+            <div class="section-header">Blacklist (''' + blacklist_count + ''')</div>
+            <div class="section-content" style="max-height: 400px;">
+                <p style="color: #888; font-size: 11px; margin-bottom: 10px;">Les domaines blacklistes seront ignores.</p>
+                <table>
+                    <thead><tr><th>Domaine</th><th>Raison</th><th></th></tr></thead>
+                    <tbody>''' + (blacklist_html or '<tr><td colspan="3" style="color: #888;">Aucun domaine</td></tr>') + '''</tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-header">Whitelist (''' + whitelist_count + ''')</div>
+            <div class="section-content" style="max-height: 400px;">
+                <p style="color: #888; font-size: 11px; margin-bottom: 10px;">Les domaines whitelistes seront priorises.</p>
+                <table>
+                    <thead><tr><th>Domaine</th><th>Raison</th><th></th></tr></thead>
+                    <tbody>''' + (whitelist_html or '<tr><td colspan="3" style="color: #888;">Aucun domaine</td></tr>') + '''</tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    function addToList() {
+        var domain = document.getElementById("domainInput").value.trim();
+        var listType = document.getElementById("listType").value;
+        var reason = document.getElementById("reasonInput").value.trim();
+        
+        if (!domain) { showMessage("Domaine requis", "error"); return; }
+        
+        fetch("/api/add-to-list", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({domain: domain, list_type: listType, reason: reason})
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            showMessage(data.message, data.success ? "success" : "error");
+            if (data.success) {
+                document.getElementById("domainInput").value = "";
+                document.getElementById("reasonInput").value = "";
+                setTimeout(function() { location.reload(); }, 1000);
+            }
+        });
+    }
+    
+    function removeFromList(domain) {
+        fetch("/api/remove-from-list", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({domain: domain})
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            showMessage(data.message, data.success ? "success" : "error");
+            if (data.success) setTimeout(function() { location.reload(); }, 1000);
+        });
+    }
+    </script>'''
+    
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')

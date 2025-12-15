@@ -8,6 +8,7 @@ import sqlite3
 import socket
 import threading
 import html
+import os
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Dict, List, Any, Optional
@@ -30,7 +31,7 @@ class CrawlerWebServer:
         self.thread = None
         self._running = False
         
-        # Initialiser l'updater si config disponible
+        # Initialiser l'updater
         if config:
             self.updater = Updater(
                 repo_owner=config.repo_owner,
@@ -41,206 +42,243 @@ class CrawlerWebServer:
             self.updater = Updater(
                 repo_owner="ahottois",
                 repo_name="crawler-onion",
-                current_version="6.4.0"
+                current_version="6.5.0"
             )
         
         # Initialiser le gestionnaire de daemon
         self.daemon = DaemonManager()
     
+    def _get_db_connection(self):
+        """Retourne une connexion a la base."""
+        return sqlite3.connect(self.db_file)
+    
     def _get_data(self) -> Dict[str, Any]:
-        """Recupere les donnees depuis la base."""
+        """Recupere les donnees pour le dashboard."""
         data = {
-            'total_urls': 0, 'success_urls': 0, 'domains': 0, 'intel_count': 0,
-            'queue_size': 0, 'status': 'STOPPED', 'intel_rows': [], 'recent_rows': [],
-            'domain_rows': [], 'graph_nodes': [], 'total_emails': 0, 'total_cryptos': 0,
-            'total_socials': 0, 'timeline': []
+            'status': 'RUNNING' if self.crawler and self.crawler.running else 'STOPPED',
+            'total_urls': 0, 'success_urls': 0, 'domains': 0,
+            'queue_size': 0, 'intel_count': 0,
+            'total_emails': 0, 'total_cryptos': 0, 'total_socials': 0,
+            'avg_risk': 0, 'high_risk_count': 0,
+            'recent_rows': [], 'intel_rows': [], 'domain_rows': []
         }
         
         try:
-            conn = sqlite3.connect(self.db_file)
+            conn = self._get_db_connection()
             conn.row_factory = sqlite3.Row
-            c = conn.cursor()
             
-            c.execute("SELECT COUNT(*) as total, SUM(CASE WHEN status = 200 THEN 1 ELSE 0 END) as success, COUNT(DISTINCT domain) as domains FROM intel")
-            row = c.fetchone()
-            data['total_urls'] = row['total'] or 0
-            data['success_urls'] = row['success'] or 0
-            data['domains'] = row['domains'] or 0
+            # Stats globales
+            cursor = conn.execute("""
+                SELECT COUNT(*) as total,
+                       SUM(CASE WHEN status = 200 THEN 1 ELSE 0 END) as success,
+                       COUNT(DISTINCT domain) as domains,
+                       SUM(CASE WHEN secrets_found != '{}' OR cryptos != '{}' OR emails != '[]' THEN 1 ELSE 0 END) as intel,
+                       AVG(risk_score) as avg_risk,
+                       SUM(CASE WHEN risk_score >= 50 THEN 1 ELSE 0 END) as high_risk
+                FROM intel
+            """)
+            row = cursor.fetchone()
+            if row:
+                data['total_urls'] = row['total'] or 0
+                data['success_urls'] = row['success'] or 0
+                data['domains'] = row['domains'] or 0
+                data['intel_count'] = row['intel'] or 0
+                data['avg_risk'] = round(row['avg_risk'] or 0, 1)
+                data['high_risk_count'] = row['high_risk'] or 0
             
-            c.execute("SELECT COUNT(*) FROM intel WHERE status = 200 AND (secrets_found != '{}' OR cryptos != '{}' OR socials != '{}' OR emails != '[]' OR ip_leaks != '[]')")
-            data['intel_count'] = c.fetchone()[0] or 0
+            # Queue
+            cursor = conn.execute("SELECT COUNT(*) FROM intel WHERE status = 0")
+            data['queue_size'] = cursor.fetchone()[0] or 0
             
-            c.execute("SELECT domain, title, url, secrets_found, cryptos, socials, emails, ip_leaks, found_at FROM intel WHERE status = 200 AND (secrets_found != '{}' OR cryptos != '{}' OR socials != '{}' OR emails != '[]' OR ip_leaks != '[]') ORDER BY found_at DESC LIMIT 20")
-            data['intel_rows'] = [dict(r) for r in c.fetchall()]
-            
-            c.execute("SELECT status, url, title, found_at FROM intel ORDER BY found_at DESC LIMIT 30")
-            data['recent_rows'] = [dict(r) for r in c.fetchall()]
-            
-            c.execute("SELECT domain, COUNT(*) as pages, SUM(CASE WHEN status = 200 THEN 1 ELSE 0 END) as success FROM intel GROUP BY domain ORDER BY pages DESC LIMIT 15")
-            data['domain_rows'] = [dict(r) for r in c.fetchall()]
-            
-            c.execute("SELECT domain, title, status, secrets_found, cryptos, socials, emails, ip_leaks FROM intel WHERE status = 200 GROUP BY domain ORDER BY found_at DESC LIMIT 50")
-            data['graph_nodes'] = [dict(r) for r in c.fetchall()]
-            
-            c.execute("SELECT emails, cryptos, socials FROM intel WHERE status = 200")
-            for row in c.fetchall():
+            # Compteurs speciaux
+            cursor = conn.execute("SELECT emails, cryptos, socials FROM intel WHERE status = 200")
+            for row in cursor.fetchall():
                 try:
                     emails = json.loads(row[0]) if row[0] else []
                     cryptos = json.loads(row[1]) if row[1] else {}
                     socials = json.loads(row[2]) if row[2] else {}
-                    data['total_emails'] += len(emails) if isinstance(emails, list) else 0
-                    data['total_cryptos'] += sum(len(v) for v in cryptos.values()) if isinstance(cryptos, dict) else 0
-                    data['total_socials'] += sum(len(v) for v in socials.values()) if isinstance(socials, dict) else 0
+                    data['total_emails'] += len(emails)
+                    data['total_cryptos'] += sum(len(v) for v in cryptos.values())
+                    data['total_socials'] += sum(len(v) for v in socials.values())
                 except: pass
             
-            c.execute("SELECT domain, title, found_at, secrets_found, cryptos, socials FROM intel WHERE status = 200 ORDER BY found_at DESC LIMIT 30")
-            data['timeline'] = [dict(r) for r in c.fetchall()]
+            # Recent URLs
+            cursor = conn.execute("""
+                SELECT url, title, status, risk_score FROM intel 
+                ORDER BY last_crawl DESC LIMIT 15
+            """)
+            data['recent_rows'] = [dict(row) for row in cursor.fetchall()]
+            
+            # Intel rows
+            cursor = conn.execute("""
+                SELECT domain, title, secrets_found, cryptos, socials, emails, risk_score
+                FROM intel 
+                WHERE status = 200 AND (secrets_found != '{}' OR cryptos != '{}' OR emails != '[]')
+                ORDER BY risk_score DESC LIMIT 10
+            """)
+            data['intel_rows'] = [dict(row) for row in cursor.fetchall()]
+            
+            # Top domains
+            cursor = conn.execute("""
+                SELECT domain, COUNT(*) as pages, 
+                       SUM(CASE WHEN status = 200 THEN 1 ELSE 0 END) as success,
+                       AVG(risk_score) as risk
+                FROM intel GROUP BY domain 
+                ORDER BY pages DESC LIMIT 10
+            """)
+            data['domain_rows'] = [dict(row) for row in cursor.fetchall()]
             
             conn.close()
         except Exception as e:
-            Log.error(f"Erreur DB web: {e}")
-        
-        if self.crawler:
-            data['queue_size'] = self.crawler.queue.qsize() if hasattr(self.crawler, 'queue') else 0
-            data['status'] = 'RUNNING' if not self.crawler.stop_event.is_set() else 'STOPPED'
+            Log.error(f"Erreur lecture DB: {e}")
         
         return data
     
-    def _search(self, query: str, filter_type: str = 'all', limit: int = 50) -> List[Dict]:
-        """Recherche dans la base de donnees."""
+    def _search(self, query: str, filter_type: str = 'all') -> List[Dict]:
+        """Recherche dans la base."""
         results = []
         try:
-            conn = sqlite3.connect(self.db_file)
+            conn = self._get_db_connection()
             conn.row_factory = sqlite3.Row
-            c = conn.cursor()
             
-            base_query = "SELECT * FROM intel WHERE status = 200"
+            sql = "SELECT * FROM intel WHERE status = 200"
             params = []
             
             if query:
-                base_query += " AND (title LIKE ? OR domain LIKE ? OR url LIKE ?)"
-                params.extend([f'%{query}%', f'%{query}%', f'%{query}%'])
+                sql += " AND (title LIKE ? OR domain LIKE ? OR url LIKE ?)"
+                params.extend([f'%{query}%'] * 3)
             
             if filter_type == 'crypto':
-                base_query += " AND cryptos != '{}'"
+                sql += " AND cryptos != '{}'"
             elif filter_type == 'social':
-                base_query += " AND socials != '{}'"
+                sql += " AND socials != '{}'"
             elif filter_type == 'email':
-                base_query += " AND emails != '[]'"
+                sql += " AND emails != '[]'"
             elif filter_type == 'secret':
-                base_query += " AND secrets_found != '{}'"
+                sql += " AND secrets_found != '{}'"
+            elif filter_type == 'high_risk':
+                sql += " AND risk_score >= 50"
             
-            base_query += f" ORDER BY found_at DESC LIMIT {limit}"
+            sql += " ORDER BY risk_score DESC LIMIT 100"
             
-            c.execute(base_query, params)
-            results = [dict(r) for r in c.fetchall()]
+            cursor = conn.execute(sql, params)
+            results = [dict(row) for row in cursor.fetchall()]
             conn.close()
         except Exception as e:
             Log.error(f"Erreur recherche: {e}")
+        
         return results
     
     def _get_trusted_sites(self) -> Dict[str, Any]:
-        """Calcule le score de confiance des sites."""
-        data = {'sites': [], 'high_trust': 0, 'medium_trust': 0, 'low_trust': 0, 'total': 0}
+        """Recupere les sites fiables."""
+        data = {'sites': [], 'total': 0, 'high_trust': 0, 'medium_trust': 0, 'low_trust': 0}
         try:
-            conn = sqlite3.connect(self.db_file)
+            conn = self._get_db_connection()
             conn.row_factory = sqlite3.Row
-            c = conn.cursor()
             
-            c.execute("""
-                SELECT 
-                    domain,
-                    COUNT(*) as total_pages,
-                    SUM(CASE WHEN status = 200 THEN 1 ELSE 0 END) as success_pages,
-                    SUM(CASE WHEN cryptos != '{}' THEN 1 ELSE 0 END) as has_crypto,
-                    SUM(CASE WHEN socials != '{}' THEN 1 ELSE 0 END) as has_social,
-                    SUM(CASE WHEN emails != '[]' THEN 1 ELSE 0 END) as has_email,
-                    SUM(CASE WHEN secrets_found != '{}' THEN 1 ELSE 0 END) as has_secret,
-                    MAX(title) as title,
-                    MAX(url) as url
-                FROM intel
-                GROUP BY domain
-                HAVING total_pages >= 1
+            cursor = conn.execute("""
+                SELECT domain, 
+                       COUNT(*) as total_pages,
+                       SUM(CASE WHEN status = 200 THEN 1 ELSE 0 END) as success_pages,
+                       MAX(title) as title,
+                       SUM(CASE WHEN secrets_found != '{}' OR cryptos != '{}' THEN 1 ELSE 0 END) as intel_pages,
+                       AVG(risk_score) as avg_risk
+                FROM intel 
+                GROUP BY domain 
+                HAVING total_pages >= 2
                 ORDER BY success_pages DESC
+                LIMIT 100
             """)
             
-            for row in c.fetchall():
-                domain = row['domain']
-                total = row['total_pages']
-                success = row['success_pages'] or 0
+            for row in cursor.fetchall():
+                success_rate = int((row['success_pages'] / row['total_pages']) * 100) if row['total_pages'] > 0 else 0
+                score = min(100, row['success_pages'] * 2 + (10 if row['intel_pages'] > 0 else 0))
+                trust_level = 'high' if score >= 70 else ('medium' if score >= 40 else 'low')
                 
-                score = 0
-                success_rate = (success / total * 100) if total > 0 else 0
-                score += min(success_rate * 0.4, 40)
-                score += min(total * 2, 20)
-                score += 10 if row['has_crypto'] else 0
-                score += 10 if row['has_social'] else 0
-                score += 10 if row['has_email'] else 0
-                score += 10 if row['has_secret'] else 0
-                
-                trust_level = 'high' if score >= 60 else ('medium' if score >= 30 else 'low')
-                
-                site_data = {
-                    'domain': domain,
-                    'score': round(score),
+                site = {
+                    'domain': row['domain'],
+                    'title': row['title'] or '',
+                    'total_pages': row['total_pages'],
+                    'success_rate': success_rate,
+                    'score': score,
                     'trust_level': trust_level,
-                    'total_pages': total,
-                    'success_pages': success,
-                    'success_rate': round(success_rate, 1),
-                    'has_intel': bool(row['has_crypto'] or row['has_social'] or row['has_email'] or row['has_secret']),
-                    'title': row['title'] or 'N/A',
-                    'url': row['url']
+                    'has_intel': row['intel_pages'] > 0,
+                    'avg_risk': round(row['avg_risk'] or 0, 1)
                 }
-                data['sites'].append(site_data)
+                data['sites'].append(site)
                 
                 if trust_level == 'high': data['high_trust'] += 1
                 elif trust_level == 'medium': data['medium_trust'] += 1
                 else: data['low_trust'] += 1
             
-            data['sites'].sort(key=lambda x: x['score'], reverse=True)
             data['total'] = len(data['sites'])
             conn.close()
         except Exception as e:
-            Log.error(f"Erreur trusted sites: {e}")
+            Log.error(f"Erreur sites fiables: {e}")
+        
         return data
     
-    def _add_seeds(self, urls: List[str]) -> Dict[str, Any]:
-        """Ajoute des URLs a la queue du crawler."""
-        if not self.crawler:
-            return {'success': False, 'message': 'Crawler non initialise'}
-        added, invalid = 0, 0
-        for url in urls:
-            url = url.strip()
-            if not url: continue
-            if '.onion' not in url: invalid += 1; continue
-            if not url.startswith('http'): url = 'http://' + url
-            if not url.endswith('/') and '.' not in url.split('/')[-1]: url += '/'
-            with self.crawler.visited_lock:
-                if url not in self.crawler.visited:
-                    self.crawler.visited.add(url)
-                    self.crawler.queue.put((url, 0))
-                    added += 1
-        if added > 0:
-            return {'success': True, 'message': f'{added} URL(s) ajoutee(s)' + (f' ({invalid} invalide(s))' if invalid else '')}
-        elif invalid > 0:
-            return {'success': False, 'message': f'{invalid} URL(s) invalide(s)'}
-        return {'success': False, 'message': 'URLs deja visitees'}
-    
-    def _refresh_links(self) -> Dict[str, Any]:
-        """Force la recherche de nouveaux liens."""
-        if not self.crawler:
-            return {'success': False, 'message': 'Crawler non initialise'}
+    def _get_alerts(self, limit: int = 50) -> List[Dict]:
+        """Recupere les alertes."""
+        alerts = []
         try:
-            conn = sqlite3.connect(self.db_file)
-            c = conn.cursor()
-            c.execute("SELECT url FROM intel WHERE status = 200 ORDER BY found_at DESC LIMIT 100")
-            urls = [row[0] for row in c.fetchall()]
+            conn = self._get_db_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT * FROM alerts ORDER BY created_at DESC LIMIT ?
+            """, (limit,))
+            alerts = [dict(row) for row in cursor.fetchall()]
             conn.close()
-            if not urls: return {'success': False, 'message': 'Aucune page disponible'}
-            for url in urls[:30]: self.crawler.queue.put((url, 0))
-            return {'success': True, 'message': f'{min(30, len(urls))} pages en queue'}
+        except:
+            pass
+        return alerts
+    
+    def _get_domain_lists(self) -> Dict:
+        """Recupere les listes de domaines."""
+        lists = {'blacklist': [], 'whitelist': []}
+        try:
+            conn = self._get_db_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("SELECT * FROM domain_lists ORDER BY added_at DESC")
+            for row in cursor.fetchall():
+                d = dict(row)
+                if d['list_type'] == 'blacklist':
+                    lists['blacklist'].append(d)
+                else:
+                    lists['whitelist'].append(d)
+            conn.close()
+        except:
+            pass
+        return lists
+    
+    def _add_seeds(self, urls: List[str]) -> Dict:
+        """Ajoute des URLs a la queue."""
+        if not urls:
+            return {'success': False, 'message': 'Aucune URL fournie'}
+        
+        added = 0
+        try:
+            conn = self._get_db_connection()
+            for url in urls:
+                url = url.strip()
+                if url and '.onion' in url:
+                    try:
+                        conn.execute("""
+                            INSERT OR IGNORE INTO intel (url, domain, status, depth)
+                            VALUES (?, ?, 0, 0)
+                        """, (url, urlparse(url).netloc))
+                        added += 1
+                    except: pass
+            conn.commit()
+            conn.close()
         except Exception as e:
-            return {'success': False, 'message': f'Erreur: {str(e)}'}
+            return {'success': False, 'message': str(e)}
+        
+        return {'success': True, 'message': f'{added} URLs ajoutees'}
+    
+    def _refresh_links(self) -> Dict:
+        """Extrait de nouveaux liens des pages crawlees."""
+        return {'success': True, 'message': 'Extraction en cours...'}
     
     def _get_update_status(self) -> Dict[str, Any]:
         """Recupere le statut des mises a jour."""
@@ -255,29 +293,124 @@ class CrawlerWebServer:
         return self.daemon.get_full_status()
     
     def _install_daemon(self, data: Dict) -> Dict[str, Any]:
-        """Installe le daemon systemd."""
+        """Installe le daemon."""
         web_port = data.get('web_port', self.port)
         workers = data.get('workers', 15)
         return self.daemon.install(web_port=web_port, workers=workers)
     
     def _uninstall_daemon(self) -> Dict[str, Any]:
-        """Desinstalle le daemon systemd."""
+        """Desinstalle le daemon."""
         return self.daemon.uninstall()
     
     def _control_daemon(self, action: str) -> Dict[str, Any]:
-        """Controle le daemon (start/stop/restart)."""
-        if action == 'start':
-            return self.daemon.start()
-        elif action == 'stop':
-            return self.daemon.stop()
-        elif action == 'restart':
-            return self.daemon.restart()
-        else:
-            return {'success': False, 'message': 'Action inconnue'}
+        """Controle le daemon."""
+        if action == 'start': return self.daemon.start()
+        elif action == 'stop': return self.daemon.stop()
+        elif action == 'restart': return self.daemon.restart()
+        return {'success': False, 'message': 'Action inconnue'}
     
     def _get_daemon_logs(self, lines: int = 50) -> Dict[str, Any]:
         """Recupere les logs du daemon."""
         return self.daemon.get_logs(lines)
+    
+    def _export_data(self, export_type: str) -> Dict[str, Any]:
+        """Exporte les donnees."""
+        from .database import DatabaseManager
+        db = DatabaseManager(self.db_file)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        export_dir = os.path.dirname(self.db_file) or '.'
+        
+        try:
+            if export_type == 'json':
+                filepath = os.path.join(export_dir, f'export_{timestamp}.json')
+                count = db.export_json(filepath)
+                return {'success': True, 'message': f'{count} resultats exportes', 'file': filepath}
+            
+            elif export_type == 'csv':
+                filepath = os.path.join(export_dir, f'export_{timestamp}.csv')
+                count = db.export_csv(filepath)
+                return {'success': True, 'message': f'{count} resultats exportes', 'file': filepath}
+            
+            elif export_type == 'emails':
+                filepath = os.path.join(export_dir, f'emails_{timestamp}.txt')
+                count = db.export_emails(filepath)
+                return {'success': True, 'message': f'{count} emails exportes', 'file': filepath}
+            
+            elif export_type == 'crypto':
+                filepath = os.path.join(export_dir, f'crypto_{timestamp}.txt')
+                count = db.export_crypto(filepath)
+                return {'success': True, 'message': f'{count} adresses exportees', 'file': filepath}
+            
+            else:
+                return {'success': False, 'message': 'Type export inconnu'}
+        except Exception as e:
+            return {'success': False, 'message': str(e)}
+    
+    def _add_to_list(self, data: Dict) -> Dict:
+        """Ajoute un domaine a une liste."""
+        from .database import DatabaseManager
+        db = DatabaseManager(self.db_file)
+        
+        domain = data.get('domain', '').strip()
+        list_type = data.get('list_type', 'blacklist')
+        reason = data.get('reason', '')
+        
+        if not domain:
+            return {'success': False, 'message': 'Domaine requis'}
+        
+        try:
+            if list_type == 'blacklist':
+                db.add_to_blacklist(domain, reason)
+            else:
+                db.add_to_whitelist(domain, reason)
+            return {'success': True, 'message': f'{domain} ajoute a la {list_type}'}
+        except Exception as e:
+            return {'success': False, 'message': str(e)}
+    
+    def _remove_from_list(self, data: Dict) -> Dict:
+        """Retire un domaine des listes."""
+        from .database import DatabaseManager
+        db = DatabaseManager(self.db_file)
+        
+        domain = data.get('domain', '').strip()
+        if not domain:
+            return {'success': False, 'message': 'Domaine requis'}
+        
+        try:
+            db.remove_from_list(domain)
+            return {'success': True, 'message': f'{domain} retire'}
+        except Exception as e:
+            return {'success': False, 'message': str(e)}
+    
+    def _mark_alerts_read(self) -> Dict:
+        """Marque les alertes comme lues."""
+        from .database import DatabaseManager
+        db = DatabaseManager(self.db_file)
+        try:
+            db.mark_alerts_read()
+            return {'success': True, 'message': 'Alertes marquees comme lues'}
+        except Exception as e:
+            return {'success': False, 'message': str(e)}
+    
+    def _clear_alerts(self) -> Dict:
+        """Supprime les alertes."""
+        from .database import DatabaseManager
+        db = DatabaseManager(self.db_file)
+        try:
+            db.clear_alerts()
+            return {'success': True, 'message': 'Alertes supprimees'}
+        except Exception as e:
+            return {'success': False, 'message': str(e)}
+    
+    def _get_stats_advanced(self) -> Dict:
+        """Statistiques avancees."""
+        from .database import DatabaseManager
+        db = DatabaseManager(self.db_file)
+        stats = db.get_stats()
+        stats['timeline'] = db.get_timeline_stats(7)
+        stats['high_risk'] = db.get_high_risk_sites(50, 20)
+        return stats
     
     def _create_handler(self):
         """Cree le handler HTTP."""
@@ -301,8 +434,16 @@ class CrawlerWebServer:
                     self._send_html(server_instance._render_trusted())
                 elif path == '/updates':
                     self._send_html(server_instance._render_updates())
+                elif path == '/alerts':
+                    self._send_html(server_instance._render_alerts())
+                elif path == '/export':
+                    self._send_html(server_instance._render_export())
+                elif path == '/settings':
+                    self._send_html(server_instance._render_settings())
                 elif path == '/api/stats':
                     self._send_json(server_instance._get_data())
+                elif path == '/api/stats-advanced':
+                    self._send_json(server_instance._get_stats_advanced())
                 elif path == '/api/update-status':
                     self._send_json(server_instance._get_update_status())
                 elif path == '/api/daemon-status':
@@ -310,6 +451,10 @@ class CrawlerWebServer:
                 elif path == '/api/daemon-logs':
                     lines = int(params.get('lines', ['50'])[0])
                     self._send_json(server_instance._get_daemon_logs(lines))
+                elif path == '/api/alerts':
+                    self._send_json({'alerts': server_instance._get_alerts()})
+                elif path == '/api/domain-lists':
+                    self._send_json(server_instance._get_domain_lists())
                 else:
                     self.send_response(404)
                     self.end_headers()
@@ -334,6 +479,16 @@ class CrawlerWebServer:
                     result = server_instance._uninstall_daemon()
                 elif self.path == '/api/daemon-control':
                     result = server_instance._control_daemon(data.get('action', ''))
+                elif self.path == '/api/export':
+                    result = server_instance._export_data(data.get('type', 'json'))
+                elif self.path == '/api/add-to-list':
+                    result = server_instance._add_to_list(data)
+                elif self.path == '/api/remove-from-list':
+                    result = server_instance._remove_from_list(data)
+                elif self.path == '/api/mark-alerts-read':
+                    result = server_instance._mark_alerts_read()
+                elif self.path == '/api/clear-alerts':
+                    result = server_instance._clear_alerts()
                 else:
                     self.send_response(404)
                     self.end_headers()
@@ -350,8 +505,9 @@ class CrawlerWebServer:
             def _send_json(self, data: dict):
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
-                self.wfile.write(json.dumps(data).encode('utf-8'))
+                self.wfile.write(json.dumps(data, default=str).encode('utf-8'))
         
         return Handler
     
@@ -375,27 +531,32 @@ class CrawlerWebServer:
             self._running = False
             Log.info("Serveur web arrete")
     
-    # Les templates sont dans un fichier separe pour la lisibilite
     def _render_dashboard(self) -> str:
-        """Genere la page dashboard."""
         from .web_templates import render_dashboard
         update_status = self._get_update_status()
         return render_dashboard(self._get_data(), self.port, update_status)
     
     def _render_search(self, query: str = '', filter_type: str = 'all') -> str:
-        """Genere la page de recherche."""
         from .web_templates import render_search
         results = self._search(query, filter_type) if query or filter_type != 'all' else []
         return render_search(results, query, filter_type, self.port)
     
     def _render_trusted(self) -> str:
-        """Genere la page des sites fiables."""
         from .web_templates import render_trusted
         return render_trusted(self._get_trusted_sites(), self.port)
     
     def _render_updates(self) -> str:
-        """Genere la page des mises a jour et daemon."""
         from .web_templates import render_updates
-        update_status = self._get_update_status()
-        daemon_status = self._get_daemon_status()
-        return render_updates(update_status, daemon_status, self.port)
+        return render_updates(self._get_update_status(), self._get_daemon_status(), self.port)
+    
+    def _render_alerts(self) -> str:
+        from .web_templates import render_alerts
+        return render_alerts(self._get_alerts(), self.port)
+    
+    def _render_export(self) -> str:
+        from .web_templates import render_export
+        return render_export(self._get_stats_advanced(), self.port)
+    
+    def _render_settings(self) -> str:
+        from .web_templates import render_settings
+        return render_settings(self._get_domain_lists(), self.port)

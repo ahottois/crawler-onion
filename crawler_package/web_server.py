@@ -886,6 +886,34 @@ class CrawlerWebServer:
     def start(self):
         """Demarre le serveur."""
         if self._running: return
+        
+        # Verifier si le port est deja utilise
+        if self._is_port_in_use():
+            Log.warning(f"Port {self.port} deja utilise")
+            try:
+                # Demander a l'utilisateur
+                response = input(f"Le port {self.port} est occupe. Tuer le processus? (o/n): ").strip().lower()
+                if response in ('o', 'y', 'oui', 'yes'):
+                    if self._kill_port_process():
+                        Log.success(f"Processus sur port {self.port} tue")
+                        import time
+                        time.sleep(1)  # Attendre que le port se libere
+                    else:
+                        Log.error("Impossible de tuer le processus")
+                        return
+                else:
+                    Log.info("Serveur web non demarre")
+                    return
+            except EOFError:
+                # Mode non-interactif (daemon), tuer automatiquement
+                Log.info(f"Mode non-interactif, kill auto du port {self.port}")
+                if self._kill_port_process():
+                    import time
+                    time.sleep(1)
+                else:
+                    Log.error("Impossible de liberer le port")
+                    return
+        
         try:
             self.server = HTTPServer(('0.0.0.0', self.port), self._create_handler())
             self.server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -900,6 +928,46 @@ class CrawlerWebServer:
                 Log.info(f"IP Whitelist active: {len(self.security.ip_whitelist.get_list())} IPs")
         except Exception as e:
             Log.error(f"Erreur serveur web: {e}")
+    
+    def _is_port_in_use(self) -> bool:
+        """Verifie si le port est deja utilise."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(('0.0.0.0', self.port))
+                return False
+            except OSError:
+                return True
+    
+    def _kill_port_process(self) -> bool:
+        """Tue le processus utilisant le port."""
+        import subprocess
+        try:
+            # Linux: lsof + kill
+            result = subprocess.run(
+                ['lsof', '-t', '-i', f':{self.port}'],
+                capture_output=True, text=True, timeout=5
+            )
+            pids = result.stdout.strip().split('\n')
+            killed = False
+            for pid in pids:
+                if pid:
+                    try:
+                        subprocess.run(['kill', '-9', pid], timeout=5)
+                        killed = True
+                    except:
+                        pass
+            return killed
+        except FileNotFoundError:
+            # Windows ou lsof non disponible
+            try:
+                import os
+                os.system(f'fuser -k {self.port}/tcp 2>/dev/null')
+                return True
+            except:
+                return False
+        except Exception as e:
+            Log.error(f"Erreur kill port: {e}")
+            return False
     
     def stop(self):
         """Arrete le serveur."""

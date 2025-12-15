@@ -1263,7 +1263,7 @@ def render_security(security_status: Dict, audit_data: Dict, port: int) -> str:
         <div class="section">
             <div class="section-header">IP Whitelist</div>
             <div class="section-content">
-                <div class="form-row" style="margin-bottom:15px;">
+                <div class="form-row" style="margin-bottom:10px;">
                     <input type="text" id="newIP" placeholder="IP a ajouter" style="flex:2;">
                     <button class="btn btn-primary" onclick="addIP()">Ajouter</button>
                 </div>
@@ -1416,17 +1416,21 @@ def render_correlations(corr_data: Dict, port: int) -> str:
     correlations = corr_data.get('correlations', [])
     cross_domain = corr_data.get('cross_domain', [])
     
+    # Stats
+    total_corr = len(correlations)
+    avg_score = sum(c.get('correlation_score', 0) for c in correlations) / max(total_corr, 1)
+    
     # Table correlations
     corr_html = ""
     for c in correlations[:50]:
         score_class = 'danger' if c.get('correlation_score', 0) >= 0.9 else ('warning' if c.get('correlation_score', 0) >= 0.7 else '')
-        corr_html += f'''<tr class="{score_class}">
-            <td>{c.get('entity1_type', '')}: {html.escape(str(c.get('entity1_value', ''))[:30])}</td>
-            <td>{c.get('entity2_type', '')}: {html.escape(str(c.get('entity2_value', ''))[:30])}</td>
-            <td><strong>{c.get('correlation_score', 0):.2f}</strong></td>
-            <td>{c.get('relationship_type', '')}</td>
-            <td>{html.escape(str(c.get('interpretation', ''))[:50])}</td>
-        </tr>'''
+        corr_html += '<tr class="' + score_class + '">'
+        corr_html += '<td>' + html.escape(str(c.get('entity1_type', ''))) + ': ' + html.escape(str(c.get('entity1_value', ''))[:30]) + '</td>'
+        corr_html += '<td>' + html.escape(str(c.get('entity2_type', ''))) + ': ' + html.escape(str(c.get('entity2_value', ''))[:30]) + '</td>'
+        corr_html += '<td><strong>' + str(round(c.get('correlation_score', 0), 2)) + '</strong></td>'
+        corr_html += '<td>' + html.escape(str(c.get('relationship_type', ''))) + '</td>'
+        corr_html += '<td>' + html.escape(str(c.get('interpretation', ''))[:50]) + '</td>'
+        corr_html += '</tr>'
     
     if not corr_html:
         corr_html = '<tr><td colspan="5" style="color:#888;">Aucune correlation</td></tr>'
@@ -1434,22 +1438,22 @@ def render_correlations(corr_data: Dict, port: int) -> str:
     # Table cross-domain
     cross_html = ""
     for cd in cross_domain[:30]:
-        cross_html += f'''<tr>
-            <td>{cd.get('entity_type', '')}</td>
-            <td>{html.escape(str(cd.get('value', ''))[:40])}</td>
-            <td><strong>{cd.get('domain_count', 0)}</strong></td>
-            <td>{cd.get('total_occurrences', 0)}</td>
-            <td style="font-size:10px;">{html.escape(str(cd.get('domains', ''))[:60])}</td>
-        </tr>'''
+        cross_html += '<tr>'
+        cross_html += '<td>' + html.escape(str(cd.get('entity_type', ''))) + '</td>'
+        cross_html += '<td>' + html.escape(str(cd.get('value', ''))[:40]) + '</td>'
+        cross_html += '<td><strong>' + str(cd.get('domain_count', 0)) + '</strong></td>'
+        cross_html += '<td>' + str(cd.get('total_occurrences', 0)) + '</td>'
+        cross_html += '<td style="font-size:10px;">' + html.escape(str(cd.get('domains', ''))[:60]) + '</td>'
+        cross_html += '</tr>'
     
     if not cross_html:
         cross_html = '<tr><td colspan="5" style="color:#888;">Aucune entite cross-domain</td></tr>'
     
     page_content = '''
     <div class="stats-grid">
-        <div class="stat-card danger"><h3>CORRELATIONS</h3><div class="value">''' + str(stats.get('total', 0)) + '''</div></div>
-        <div class="stat-card warning"><h3>DOMAINES CROISES</h3><div class="value">''' + str(len(cross_domain)) + '''</div></div>
-        <div class="stat-card info"><h3>SCORE MOYEN</h3><div class="value">''' + f"{sum(c.get('correlation_score', 0) for c in correlations) / max(len(correlations), 1):.2f}" + '''</div></div>
+        <div class="stat-card danger"><h3>CORRELATIONS</h3><div class="value">''' + str(total_corr) + '''</div></div>
+        <div class="stat-card warning"><h3>CROSS-DOMAIN</h3><div class="value">''' + str(len(cross_domain)) + '''</div></div>
+        <div class="stat-card info"><h3>SCORE MOYEN</h3><div class="value">''' + str(round(avg_score, 2)) + '''</div></div>
     </div>
     
     <div class="section">
@@ -1474,93 +1478,57 @@ def render_correlations(corr_data: Dict, port: int) -> str:
     
     <div class="info-box" style="margin-top:20px;">
         <p><strong>Interpretation des scores:</strong></p>
-        <p>? <strong>0.9+</strong> = CRITICAL - Meme acteur probable</p>
-        <p>? <strong>0.7-0.9</strong> = HIGH - Forte correlation</p>
-        <p>? <strong>0.4-0.7</strong> = MEDIUM - Correlation moderee</p>
+        <p>0.9+ = CRITICAL - Meme acteur probable</p>
+        <p>0.7-0.9 = HIGH - Forte correlation</p>
+        <p>0.4-0.7 = MEDIUM - Correlation moderee</p>
     </div>'''
     
     return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
         nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
 
 
-def render_alerts_advanced(alerts_data: Dict, port: int) -> str:
-    """Page des alertes avancees."""
-    version = "8.0.0"
-    
-    alerts = alerts_data.get('alerts', [])
-    stats = alerts_data.get('stats', {})
+def render_alerts(alerts: List[Dict], port: int) -> str:
+    """Page des alertes simple."""
+    version = "7.0.0"
     
     alerts_html = ""
-    for a in alerts[:100]:
-        severity = a.get('severity', 'LOW')
-        sev_class = {
-            'CRITICAL': 'danger',
-            'HIGH': 'warning',
-            'MEDIUM': 'info',
-            'LOW': ''
-        }.get(severity, '')
+    for a in alerts[:50]:
+        severity = a.get('severity', 'info')
+        sev_class = 'danger' if severity == 'danger' else ('warning' if severity == 'warning' else '')
         
-        icon = {'CRITICAL': '??', 'HIGH': '??', 'MEDIUM': '??', 'LOW': '??'}.get(severity, '?')
-        
-        ack_btn = ''
-        if not a.get('acknowledged'):
-            ack_btn = f'<button class="btn btn-small" onclick="ackAlert(\'{a.get("id", "")}\')">Acquitter</button>'
-        else:
-            ack_btn = '<span style="color:#888;">?</span>'
-        
-        alerts_html += f'''<tr class="{sev_class}">
-            <td>{icon} {severity}</td>
-            <td><strong>{html.escape(str(a.get('title', ''))[:50])}</strong></td>
-            <td>{html.escape(a.get('trigger', ''))}</td>
-            <td>{html.escape(a.get('domain', '') or '-')}</td>
-            <td>{str(a.get('timestamp', ''))[-19:-7]}</td>
-            <td>{ack_btn}</td>
-        </tr>'''
+        alerts_html += '<tr class="' + sev_class + '">'
+        alerts_html += '<td>' + html.escape(str(a.get('severity', 'info'))) + '</td>'
+        alerts_html += '<td>' + html.escape(str(a.get('title', ''))[:60]) + '</td>'
+        alerts_html += '<td>' + html.escape(str(a.get('domain', '') or '-')) + '</td>'
+        alerts_html += '<td>' + html.escape(str(a.get('created_at', ''))[:16]) + '</td>'
+        alerts_html += '</tr>'
     
     if not alerts_html:
-        alerts_html = '<tr><td colspan="6" style="color:#888;">Aucune alerte</td></tr>'
+        alerts_html = '<tr><td colspan="4" style="color:#888;">Aucune alerte</td></tr>'
     
     page_content = '''
-    <div class="stats-grid">
-        <div class="stat-card danger"><h3>CRITICAL</h3><div class="value">''' + str(stats.get('by_severity', {}).get('critical', 0)) + '''</div></div>
-        <div class="stat-card warning"><h3>HIGH</h3><div class="value">''' + str(stats.get('by_severity', {}).get('high', 0)) + '''</div></div>
-        <div class="stat-card info"><h3>MEDIUM</h3><div class="value">''' + str(stats.get('by_severity', {}).get('medium', 0)) + '''</div></div>
-        <div class="stat-card"><h3>NON LU</h3><div class="value">''' + str(stats.get('unacknowledged', 0)) + '''</div></div>
-    </div>
-    
     <div class="section">
         <div class="section-header">
-            Alertes (''' + str(stats.get('total', 0)) + ''')
-            <div style="float:right;">
-                <select onchange="filterAlerts(this.value)" style="background:#111;color:#00ff00;border:1px solid #333;">
-                    <option value="">Toutes</option>
-                    <option value="CRITICAL">Critical</option>
-                    <option value="HIGH">High</option>
-                    <option value="MEDIUM">Medium</option>
-                </select>
-            </div>
+            Alertes (''' + str(len(alerts)) + ''')
+            <button class="btn btn-small btn-warning" onclick="markAllRead()">Tout marquer lu</button>
+            <button class="btn btn-small btn-danger" onclick="clearAlerts()">Supprimer</button>
         </div>
         <div class="section-content" style="max-height:600px;">
-            <table id="alertsTable">
-                <thead><tr><th>Severite</th><th>Titre</th><th>Trigger</th><th>Domaine</th><th>Date</th><th>Action</th></tr></thead>
+            <table>
+                <thead><tr><th>Severite</th><th>Message</th><th>Domaine</th><th>Date</th></tr></thead>
                 <tbody>''' + alerts_html + '''</tbody>
             </table>
         </div>
     </div>
     
     <script>
-    function ackAlert(alertId) {
-        fetch("/api/acknowledge-alert", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({alert_id: alertId})
-        }).then(function() { location.reload(); });
+    function markAllRead() {
+        fetch("/api/mark-alerts-read", {method: "POST"}).then(function() { location.reload(); });
     }
-    
-    function filterAlerts(severity) {
-        var url = "/alerts-advanced";
-        if (severity) url += "?severity=" + severity;
-        window.location.href = url;
+    function clearAlerts() {
+        if (confirm("Supprimer toutes les alertes?")) {
+            fetch("/api/clear-alerts", {method: "POST"}).then(function() { location.reload(); });
+        }
     }
     </script>'''
     
@@ -1568,94 +1536,387 @@ def render_alerts_advanced(alerts_data: Dict, port: int) -> str:
         nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
 
 
-def render_watchlists(watchlists: Dict, port: int) -> str:
-    """Page des watchlists."""
-    version = "8.0.0"
-    
-    def render_list(items, list_type):
-        html = ""
-        for item in items:
-            html += f'''<tr>
-                <td>{html.escape(item)}</td>
-                <td><button class="btn btn-danger btn-small" onclick="removeWatchlist('{list_type}', '{html.escape(item)}')">×</button></td>
-            </tr>'''
-        if not html:
-            html = '<tr><td colspan="2" style="color:#888;">Vide</td></tr>'
-        return html
+def render_export(stats: Dict, port: int) -> str:
+    """Page d'export."""
+    version = "7.0.0"
     
     page_content = '''
     <div class="stats-grid">
-        <div class="stat-card"><h3>DOMAINES</h3><div class="value">''' + str(len(watchlists.get('domains', []))) + '''</div></div>
-        <div class="stat-card"><h3>EMAILS</h3><div class="value">''' + str(len(watchlists.get('emails', []))) + '''</div></div>
-        <div class="stat-card"><h3>WALLETS</h3><div class="value">''' + str(len(watchlists.get('wallets', []))) + '''</div></div>
-        <div class="stat-card danger"><h3>INTERNES</h3><div class="value">''' + str(len(watchlists.get('internal', []))) + '''</div></div>
+        <div class="stat-card"><h3>TOTAL</h3><div class="value">''' + str(stats.get('total', 0)) + '''</div></div>
+        <div class="stat-card"><h3>EMAILS</h3><div class="value">''' + str(stats.get('with_emails', 0)) + '''</div></div>
+        <div class="stat-card"><h3>CRYPTO</h3><div class="value">''' + str(stats.get('with_crypto', 0)) + '''</div></div>
+        <div class="stat-card"><h3>SECRETS</h3><div class="value">''' + str(stats.get('with_secrets', 0)) + '''</div></div>
     </div>
     
-    <div class="info-box">
-        <p><strong>Les watchlists declenchent des alertes CRITICAL/HIGH quand un element surveille est detecte.</strong></p>
+    <div class="control-panel">
+        <h2>Exporter les Donnees</h2>
+        <div class="form-row">
+            <button class="btn btn-primary" onclick="exportData('json')">Export JSON</button>
+            <button class="btn btn-primary" onclick="exportData('csv')">Export CSV</button>
+            <button class="btn btn-warning" onclick="exportData('emails')">Export Emails</button>
+            <button class="btn btn-purple" onclick="exportData('crypto')">Export Crypto</button>
+        </div>
+        <div id="exportResult" style="margin-top:15px;"></div>
     </div>
     
+    <div class="control-panel">
+        <h2>Maintenance Base de Donnees</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Purger les donnees de plus de X jours</label>
+                <input type="number" id="purgeDays" value="30" min="1" max="365">
+            </div>
+            <div class="form-group" style="flex:0;">
+                <button class="btn btn-danger" onclick="purgeData(false)">Supprimer</button>
+                <button class="btn btn-warning" onclick="purgeData(true)">Anonymiser</button>
+            </div>
+        </div>
+        <div class="form-row">
+            <button class="btn btn-primary" onclick="vacuumDb()">Optimiser DB (VACUUM)</button>
+        </div>
+        <div id="maintenanceResult" style="margin-top:15px;"></div>
+    </div>
+    
+    <script>
+    function exportData(type) {
+        var result = document.getElementById("exportResult");
+        result.innerHTML = '<span class="loading"></span> Export en cours...';
+        fetch("/api/export", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({type: type})
+        }).then(function(r) { return r.json(); })
+        .then(function(data) {
+            result.innerHTML = '<span style="color:' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>';
+        });
+    }
+    function purgeData(anonymize) {
+        var days = document.getElementById("purgeDays").value;
+        if (!confirm((anonymize ? "Anonymiser" : "Supprimer") + " les donnees de plus de " + days + " jours?")) return;
+        var result = document.getElementById("maintenanceResult");
+        fetch("/api/purge", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({days: parseInt(days), anonymize: anonymize})
+        }).then(function(r) { return r.json(); })
+        .then(function(data) {
+            result.innerHTML = '<span style="color:' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>';
+        });
+    }
+    function vacuumDb() {
+        var result = document.getElementById("maintenanceResult");
+        result.innerHTML = '<span class="loading"></span>';
+        fetch("/api/vacuum", {method: "POST"}).then(function(r) { return r.json(); })
+        .then(function(data) {
+            result.innerHTML = '<span style="color:#00ff00;">' + data.message + '</span>';
+        });
+    }
+    </script>'''
+    
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
+
+
+def render_settings(domain_lists: Dict, port: int) -> str:
+    """Page des settings."""
+    version = "7.0.0"
+    
+    blacklist_html = ""
+    for item in domain_lists.get('blacklist', []):
+        blacklist_html += '<tr><td>' + html.escape(item.get('domain', '')) + '</td>'
+        blacklist_html += '<td>' + html.escape(item.get('reason', '')) + '</td>'
+        blacklist_html += '<td><button class="btn btn-danger btn-small" onclick="removeFromList(\'' + html.escape(item.get('domain', '')) + '\')">X</button></td></tr>'
+    
+    if not blacklist_html:
+        blacklist_html = '<tr><td colspan="3" style="color:#888;">Vide</td></tr>'
+    
+    whitelist_html = ""
+    for item in domain_lists.get('whitelist', []):
+        whitelist_html += '<tr><td>' + html.escape(item.get('domain', '')) + '</td>'
+        whitelist_html += '<td>' + html.escape(item.get('reason', '')) + '</td>'
+        whitelist_html += '<td><button class="btn btn-danger btn-small" onclick="removeFromList(\'' + html.escape(item.get('domain', '')) + '\')">X</button></td></tr>'
+    
+    if not whitelist_html:
+        whitelist_html = '<tr><td colspan="3" style="color:#888;">Vide</td></tr>'
+    
+    page_content = '''
     <div class="grid-2">
         <div class="section">
-            <div class="section-header">Domaines a surveiller</div>
+            <div class="section-header">Blacklist</div>
             <div class="section-content">
                 <div class="form-row" style="margin-bottom:10px;">
-                    <input type="text" id="newDomain" placeholder="domaine.com">
-                    <button class="btn btn-primary" onclick="addWatchlist('domain', document.getElementById('newDomain').value)">+</button>
+                    <input type="text" id="blacklistDomain" placeholder="domaine.onion">
+                    <input type="text" id="blacklistReason" placeholder="Raison">
+                    <button class="btn btn-danger" onclick="addToList('blacklist')">+</button>
                 </div>
-                <table><tbody>''' + render_list(watchlists.get('domains', []), 'domain') + '''</tbody></table>
+                <table>
+                    <thead><tr><th>Domaine</th><th>Raison</th><th></th></tr></thead>
+                    <tbody>''' + blacklist_html + '''</tbody>
+                </table>
             </div>
         </div>
         
         <div class="section">
-            <div class="section-header">Domaines internes (CRITICAL)</div>
+            <div class="section-header">Whitelist</div>
             <div class="section-content">
                 <div class="form-row" style="margin-bottom:10px;">
-                    <input type="text" id="newInternal" placeholder="internal.corp.com">
-                    <button class="btn btn-danger" onclick="addWatchlist('internal', document.getElementById('newInternal').value)">+</button>
+                    <input type="text" id="whitelistDomain" placeholder="domaine.onion">
+                    <input type="text" id="whitelistReason" placeholder="Raison">
+                    <button class="btn btn-primary" onclick="addToList('whitelist')">+</button>
                 </div>
-                <table><tbody>''' + render_list(watchlists.get('internal', []), 'internal') + '''</tbody></table>
-            </div>
-        </div>
-    </div>
-    
-    <div class="grid-2">
-        <div class="section">
-            <div class="section-header">Emails a surveiller</div>
-            <div class="section-content">
-                <div class="form-row" style="margin-bottom:10px;">
-                    <input type="text" id="newEmail" placeholder="user@domain.com">
-                    <button class="btn btn-primary" onclick="addWatchlist('email', document.getElementById('newEmail').value)">+</button>
-                </div>
-                <table><tbody>''' + render_list(watchlists.get('emails', []), 'email') + '''</tbody></table>
-            </div>
-        </div>
-        
-        <div class="section">
-            <div class="section-header">Wallets crypto a surveiller</div>
-            <div class="section-content">
-                <div class="form-row" style="margin-bottom:10px;">
-                    <input type="text" id="newWallet" placeholder="bc1q...">
-                    <button class="btn btn-primary" onclick="addWatchlist('wallet', document.getElementById('newWallet').value)">+</button>
-                </div>
-                <table><tbody>''' + render_list(watchlists.get('wallets', []), 'wallet') + '''</tbody></table>
+                <table>
+                    <thead><tr><th>Domaine</th><th>Raison</th><th></th></tr></thead>
+                    <tbody>''' + whitelist_html + '''</tbody>
+                </table>
             </div>
         </div>
     </div>
     
     <script>
-    function addWatchlist(type, value) {
-        if (!value.trim()) return;
-        fetch("/api/add-watchlist", {
+    function addToList(listType) {
+        var domain = document.getElementById(listType + "Domain").value.trim();
+        var reason = document.getElementById(listType + "Reason").value.trim();
+        if (!domain) return;
+        fetch("/api/add-to-list", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({type: type, value: value.trim()})
+            body: JSON.stringify({domain: domain, list_type: listType, reason: reason})
         }).then(function() { location.reload(); });
     }
+    function removeFromList(domain) {
+        if (!confirm("Retirer " + domain + "?")) return;
+        fetch("/api/remove-from-list", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({domain: domain})
+        }).then(function() { location.reload(); });
+    }
+    </script>'''
     
-    function removeWatchlist(type, value) {
-        // TODO: implement remove
-        alert("Remove: " + type + " - " + value);
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
+
+
+def _render_simple_chart(labels: List[str], values: List[int]) -> str:
+    """Genere un simple bar chart en HTML/CSS."""
+    if not values:
+        return '<p style="color:#888;">Pas de donnees</p>'
+    
+    max_val = max(values) if values else 1
+    bars = ""
+    for i, (label, val) in enumerate(zip(labels, values)):
+        height = int((val / max_val) * 100) if max_val > 0 else 0
+        bars += '<div style="display:inline-block;width:30px;margin:2px;text-align:center;">'
+        bars += '<div style="height:' + str(height) + 'px;background:#00ff00;min-height:2px;"></div>'
+        bars += '<div style="font-size:8px;color:#888;">' + str(label) + '</div>'
+        bars += '</div>'
+    
+    return '<div style="height:120px;display:flex;align-items:flex-end;">' + bars + '</div>'
+
+
+def render_alerts(alerts: List[Dict], port: int) -> str:
+    """Page des alertes simple."""
+    version = "7.0.0"
+    
+    alerts_html = ""
+    for a in alerts[:50]:
+        severity = a.get('severity', 'info')
+        sev_class = 'danger' if severity == 'danger' else ('warning' if severity == 'warning' else '')
+        
+        alerts_html += '<tr class="' + sev_class + '">'
+        alerts_html += '<td>' + html.escape(str(a.get('severity', 'info'))) + '</td>'
+        alerts_html += '<td>' + html.escape(str(a.get('title', ''))[:60]) + '</td>'
+        alerts_html += '<td>' + html.escape(str(a.get('domain', '') or '-')) + '</td>'
+        alerts_html += '<td>' + html.escape(str(a.get('created_at', ''))[:16]) + '</td>'
+        alerts_html += '</tr>'
+    
+    if not alerts_html:
+        alerts_html = '<tr><td colspan="4" style="color:#888;">Aucune alerte</td></tr>'
+    
+    page_content = '''
+    <div class="section">
+        <div class="section-header">
+            Alertes (''' + str(len(alerts)) + ''')
+            <button class="btn btn-small btn-warning" onclick="markAllRead()">Tout marquer lu</button>
+            <button class="btn btn-small btn-danger" onclick="clearAlerts()">Supprimer</button>
+        </div>
+        <div class="section-content" style="max-height:600px;">
+            <table>
+                <thead><tr><th>Severite</th><th>Message</th><th>Domaine</th><th>Date</th></tr></thead>
+                <tbody>''' + alerts_html + '''</tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+    function markAllRead() {
+        fetch("/api/mark-alerts-read", {method: "POST"}).then(function() { location.reload(); });
+    }
+    function clearAlerts() {
+        if (confirm("Supprimer toutes les alertes?")) {
+            fetch("/api/clear-alerts", {method: "POST"}).then(function() { location.reload(); });
+        }
+    }
+    </script>'''
+    
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
+
+
+def render_export(stats: Dict, port: int) -> str:
+    """Page d'export."""
+    version = "7.0.0"
+    
+    page_content = '''
+    <div class="stats-grid">
+        <div class="stat-card"><h3>TOTAL</h3><div class="value">''' + str(stats.get('total', 0)) + '''</div></div>
+        <div class="stat-card"><h3>EMAILS</h3><div class="value">''' + str(stats.get('with_emails', 0)) + '''</div></div>
+        <div class="stat-card"><h3>CRYPTO</h3><div class="value">''' + str(stats.get('with_crypto', 0)) + '''</div></div>
+        <div class="stat-card"><h3>SECRETS</h3><div class="value">''' + str(stats.get('with_secrets', 0)) + '''</div></div>
+    </div>
+    
+    <div class="control-panel">
+        <h2>Exporter les Donnees</h2>
+        <div class="form-row">
+            <button class="btn btn-primary" onclick="exportData('json')">Export JSON</button>
+            <button class="btn btn-primary" onclick="exportData('csv')">Export CSV</button>
+            <button class="btn btn-warning" onclick="exportData('emails')">Export Emails</button>
+            <button class="btn btn-purple" onclick="exportData('crypto')">Export Crypto</button>
+        </div>
+        <div id="exportResult" style="margin-top:15px;"></div>
+    </div>
+    
+    <div class="control-panel">
+        <h2>Maintenance Base de Donnees</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Purger les donnees de plus de X jours</label>
+                <input type="number" id="purgeDays" value="30" min="1" max="365">
+            </div>
+            <div class="form-group" style="flex:0;">
+                <button class="btn btn-danger" onclick="purgeData(false)">Supprimer</button>
+                <button class="btn btn-warning" onclick="purgeData(true)">Anonymiser</button>
+            </div>
+        </div>
+        <div class="form-row">
+            <button class="btn btn-primary" onclick="vacuumDb()">Optimiser DB (VACUUM)</button>
+        </div>
+        <div id="maintenanceResult" style="margin-top:15px;"></div>
+    </div>
+    
+    <script>
+    function exportData(type) {
+        var result = document.getElementById("exportResult");
+        result.innerHTML = '<span class="loading"></span> Export en cours...';
+        fetch("/api/export", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({type: type})
+        }).then(function(r) { return r.json(); })
+        .then(function(data) {
+            result.innerHTML = '<span style="color:' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>';
+        });
+    }
+    function purgeData(anonymize) {
+        var days = document.getElementById("purgeDays").value;
+        if (!confirm((anonymize ? "Anonymiser" : "Supprimer") + " les donnees de plus de " + days + " jours?")) return;
+        var result = document.getElementById("maintenanceResult");
+        fetch("/api/purge", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({days: parseInt(days), anonymize: anonymize})
+        }).then(function(r) { return r.json(); })
+        .then(function(data) {
+            result.innerHTML = '<span style="color:' + (data.success ? '#00ff00' : '#ff4444') + ';">' + data.message + '</span>';
+        });
+    }
+    function vacuumDb() {
+        var result = document.getElementById("maintenanceResult");
+        result.innerHTML = '<span class="loading"></span>';
+        fetch("/api/vacuum", {method: "POST"}).then(function(r) { return r.json(); })
+        .then(function(data) {
+            result.innerHTML = '<span style="color:#00ff00;">' + data.message + '</span>';
+        });
+    }
+    </script>'''
+    
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
+
+
+def render_settings(domain_lists: Dict, port: int) -> str:
+    """Page des settings."""
+    version = "7.0.0"
+    
+    blacklist_html = ""
+    for item in domain_lists.get('blacklist', []):
+        blacklist_html += '<tr><td>' + html.escape(item.get('domain', '')) + '</td>'
+        blacklist_html += '<td>' + html.escape(item.get('reason', '')) + '</td>'
+        blacklist_html += '<td><button class="btn btn-danger btn-small" onclick="removeFromList(\'' + html.escape(item.get('domain', '')) + '\')">X</button></td></tr>'
+    
+    if not blacklist_html:
+        blacklist_html = '<tr><td colspan="3" style="color:#888;">Vide</td></tr>'
+    
+    whitelist_html = ""
+    for item in domain_lists.get('whitelist', []):
+        whitelist_html += '<tr><td>' + html.escape(item.get('domain', '')) + '</td>'
+        whitelist_html += '<td>' + html.escape(item.get('reason', '')) + '</td>'
+        whitelist_html += '<td><button class="btn btn-danger btn-small" onclick="removeFromList(\'' + html.escape(item.get('domain', '')) + '\')">X</button></td></tr>'
+    
+    if not whitelist_html:
+        whitelist_html = '<tr><td colspan="3" style="color:#888;">Vide</td></tr>'
+    
+    page_content = '''
+    <div class="grid-2">
+        <div class="section">
+            <div class="section-header">Blacklist</div>
+            <div class="section-content">
+                <div class="form-row" style="margin-bottom:10px;">
+                    <input type="text" id="blacklistDomain" placeholder="domaine.onion">
+                    <input type="text" id="blacklistReason" placeholder="Raison">
+                    <button class="btn btn-danger" onclick="addToList('blacklist')">+</button>
+                </div>
+                <table>
+                    <thead><tr><th>Domaine</th><th>Raison</th><th></th></tr></thead>
+                    <tbody>''' + blacklist_html + '''</tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-header">Whitelist</div>
+            <div class="section-content">
+                <div class="form-row" style="margin-bottom:10px;">
+                    <input type="text" id="whitelistDomain" placeholder="domaine.onion">
+                    <input type="text" id="whitelistReason" placeholder="Raison">
+                    <button class="btn btn-primary" onclick="addToList('whitelist')">+</button>
+                </div>
+                <table>
+                    <thead><tr><th>Domaine</th><th>Raison</th><th></th></tr></thead>
+                    <tbody>''' + whitelist_html + '''</tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    function addToList(listType) {
+        var domain = document.getElementById(listType + "Domain").value.trim();
+        var reason = document.getElementById(listType + "Reason").value.trim();
+        if (!domain) return;
+        fetch("/api/add-to-list", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({domain: domain, list_type: listType, reason: reason})
+        }).then(function() { location.reload(); });
+    }
+    function removeFromList(domain) {
+        if (!confirm("Retirer " + domain + "?")) return;
+        fetch("/api/remove-from-list", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({domain: domain})
+        }).then(function() { location.reload(); });
     }
     </script>'''
     

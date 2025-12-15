@@ -1247,7 +1247,7 @@ def render_security(security_status: Dict, audit_data: Dict, port: int) -> str:
         <div class="stat-card ''' + auth_class + '''"><h3>AUTH JWT</h3><div class="value" style="font-size:14px;">''' + auth_status + '''</div></div>
         <div class="stat-card ''' + ip_class + '''"><h3>IP WHITELIST</h3><div class="value" style="font-size:14px;">''' + ip_status + '''</div></div>
         <div class="stat-card"><h3>RATE LIMIT</h3><div class="value" style="font-size:14px;">''' + rate_status + '''</div></div>
-        <div class="stat-card"><h3>IPs BLOQUEES</h3><div class="value">''' + str(len(rate_stats.get('blocked_ips', []))) + '''</div></div>
+        <div class="stat-card"><h3>IPS BLOQUEES</h3><div class="value">''' + str(len(rate_stats.get('blocked_ips', []))) + '''</div></div>
     </div>
     
     <div class="info-box">
@@ -1316,6 +1316,346 @@ def render_security(security_status: Dict, audit_data: Dict, port: int) -> str:
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({action: "remove", ip: ip})
         }).then(function() { location.reload(); });
+    }
+    </script>'''
+    
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
+
+
+def render_graph(graph_data: Dict, port: int) -> str:
+    """Page de visualisation du graphe d'entites."""
+    version = "8.0.0"
+    
+    nodes = graph_data.get('nodes', [])
+    edges = graph_data.get('edges', [])
+    stats = graph_data.get('stats', {})
+    
+    # Preparer nodes pour vis.js
+    nodes_js = []
+    for n in nodes[:200]:
+        color = {
+            'email': '#ff6b6b',
+            'crypto': '#feca57',
+            'social': '#48dbfb',
+            'username': '#ff9ff3',
+            'phone': '#1dd1a1',
+        }.get(n.get('entity_type', ''), '#888888')
+        
+        nodes_js.append({
+            'id': n['id'],
+            'label': n['value'][:20] + ('...' if len(n['value']) > 20 else ''),
+            'title': f"{n['entity_type']}: {n['value']}\nOccurrences: {n.get('occurrence_count', 1)}",
+            'color': color,
+            'size': min(10 + n.get('occurrence_count', 1) * 2, 40)
+        })
+    
+    edges_js = []
+    for e in edges[:500]:
+        edges_js.append({
+            'from': e['source_entity_id'],
+            'to': e['target_entity_id'],
+            'width': min(e.get('weight', 1), 5)
+        })
+    
+    page_content = '''
+    <div class="stats-grid">
+        <div class="stat-card"><h3>NOEUDS</h3><div class="value">''' + str(stats.get('total_nodes', 0)) + '''</div></div>
+        <div class="stat-card"><h3>LIENS</h3><div class="value">''' + str(stats.get('total_edges', 0)) + '''</div></div>
+        <div class="stat-card info"><h3>EMAILS</h3><div class="value">''' + str(len([n for n in nodes if n.get('entity_type') == 'email'])) + '''</div></div>
+        <div class="stat-card warning"><h3>CRYPTO</h3><div class="value">''' + str(len([n for n in nodes if 'crypto' in n.get('entity_type', '')])) + '''</div></div>
+    </div>
+    
+    <div class="section">
+        <div class="section-header">Graphe d'Entites (''' + str(len(nodes_js)) + ''' noeuds)</div>
+        <div class="section-content" style="height:500px;">
+            <div id="graph" style="width:100%;height:100%;background:#0a0a0a;border:1px solid #333;"></div>
+        </div>
+    </div>
+    
+    <div class="legend" style="margin-top:10px;">
+        <span style="color:#ff6b6b;">? Email</span>
+        <span style="color:#feca57;">? Crypto</span>
+        <span style="color:#48dbfb;">? Social</span>
+        <span style="color:#ff9ff3;">? Username</span>
+        <span style="color:#1dd1a1;">? Phone</span>
+    </div>
+    
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script>
+    var nodes = new vis.DataSet(''' + json.dumps(nodes_js) + ''');
+    var edges = new vis.DataSet(''' + json.dumps(edges_js) + ''');
+    
+    var container = document.getElementById("graph");
+    var data = { nodes: nodes, edges: edges };
+    var options = {
+        nodes: { shape: "dot", font: { color: "#00ff00", size: 10 } },
+        edges: { color: { color: "#444", highlight: "#00ff00" }, smooth: { type: "continuous" } },
+        physics: { stabilization: { iterations: 100 }, barnesHut: { gravitationalConstant: -3000 } },
+        interaction: { hover: true, tooltipDelay: 100 }
+    };
+    
+    var network = new vis.Network(container, data, options);
+    
+    network.on("click", function(params) {
+        if (params.nodes.length > 0) {
+            var nodeId = params.nodes[0];
+            window.location.href = "/entity/detail?id=" + nodeId;
+        }
+    });
+    </script>'''
+    
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
+
+
+def render_correlations(corr_data: Dict, port: int) -> str:
+    """Page des correlations."""
+    version = "8.0.0"
+    
+    correlations = corr_data.get('correlations', [])
+    cross_domain = corr_data.get('cross_domain', [])
+    
+    # Table correlations
+    corr_html = ""
+    for c in correlations[:50]:
+        score_class = 'danger' if c.get('correlation_score', 0) >= 0.9 else ('warning' if c.get('correlation_score', 0) >= 0.7 else '')
+        corr_html += f'''<tr class="{score_class}">
+            <td>{c.get('entity1_type', '')}: {html.escape(str(c.get('entity1_value', ''))[:30])}</td>
+            <td>{c.get('entity2_type', '')}: {html.escape(str(c.get('entity2_value', ''))[:30])}</td>
+            <td><strong>{c.get('correlation_score', 0):.2f}</strong></td>
+            <td>{c.get('relationship_type', '')}</td>
+            <td>{html.escape(str(c.get('interpretation', ''))[:50])}</td>
+        </tr>'''
+    
+    if not corr_html:
+        corr_html = '<tr><td colspan="5" style="color:#888;">Aucune correlation</td></tr>'
+    
+    # Table cross-domain
+    cross_html = ""
+    for cd in cross_domain[:30]:
+        cross_html += f'''<tr>
+            <td>{cd.get('entity_type', '')}</td>
+            <td>{html.escape(str(cd.get('value', ''))[:40])}</td>
+            <td><strong>{cd.get('domain_count', 0)}</strong></td>
+            <td>{cd.get('total_occurrences', 0)}</td>
+            <td style="font-size:10px;">{html.escape(str(cd.get('domains', ''))[:60])}</td>
+        </tr>'''
+    
+    if not cross_html:
+        cross_html = '<tr><td colspan="5" style="color:#888;">Aucune entite cross-domain</td></tr>'
+    
+    page_content = '''
+    <div class="stats-grid">
+        <div class="stat-card danger"><h3>CORRELATIONS</h3><div class="value">''' + str(stats.get('total', 0)) + '''</div></div>
+        <div class="stat-card warning"><h3>DOMAINES CROISES</h3><div class="value">''' + str(len(cross_domain)) + '''</div></div>
+        <div class="stat-card info"><h3>SCORE MOYEN</h3><div class="value">''' + f"{sum(c.get('correlation_score', 0) for c in correlations) / max(len(correlations), 1):.2f}" + '''</div></div>
+    </div>
+    
+    <div class="section">
+        <div class="section-header">Correlations Elevees (score >= 0.7)</div>
+        <div class="section-content" style="max-height:400px;">
+            <table>
+                <thead><tr><th>Entite 1</th><th>Entite 2</th><th>Score</th><th>Type</th><th>Interpretation</th></tr></thead>
+                <tbody>''' + corr_html + '''</tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div class="section">
+        <div class="section-header">Entites Cross-Domain (2+ domaines)</div>
+        <div class="section-content" style="max-height:400px;">
+            <table>
+                <thead><tr><th>Type</th><th>Valeur</th><th>Domaines</th><th>Occurrences</th><th>Sources</th></tr></thead>
+                <tbody>''' + cross_html + '''</tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div class="info-box" style="margin-top:20px;">
+        <p><strong>Interpretation des scores:</strong></p>
+        <p>? <strong>0.9+</strong> = CRITICAL - Meme acteur probable</p>
+        <p>? <strong>0.7-0.9</strong> = HIGH - Forte correlation</p>
+        <p>? <strong>0.4-0.7</strong> = MEDIUM - Correlation moderee</p>
+    </div>'''
+    
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
+
+
+def render_alerts_advanced(alerts_data: Dict, port: int) -> str:
+    """Page des alertes avancees."""
+    version = "8.0.0"
+    
+    alerts = alerts_data.get('alerts', [])
+    stats = alerts_data.get('stats', {})
+    
+    alerts_html = ""
+    for a in alerts[:100]:
+        severity = a.get('severity', 'LOW')
+        sev_class = {
+            'CRITICAL': 'danger',
+            'HIGH': 'warning',
+            'MEDIUM': 'info',
+            'LOW': ''
+        }.get(severity, '')
+        
+        icon = {'CRITICAL': '??', 'HIGH': '??', 'MEDIUM': '??', 'LOW': '??'}.get(severity, '?')
+        
+        ack_btn = ''
+        if not a.get('acknowledged'):
+            ack_btn = f'<button class="btn btn-small" onclick="ackAlert(\'{a.get("id", "")}\')">Acquitter</button>'
+        else:
+            ack_btn = '<span style="color:#888;">?</span>'
+        
+        alerts_html += f'''<tr class="{sev_class}">
+            <td>{icon} {severity}</td>
+            <td><strong>{html.escape(str(a.get('title', ''))[:50])}</strong></td>
+            <td>{html.escape(a.get('trigger', ''))}</td>
+            <td>{html.escape(a.get('domain', '') or '-')}</td>
+            <td>{str(a.get('timestamp', ''))[-19:-7]}</td>
+            <td>{ack_btn}</td>
+        </tr>'''
+    
+    if not alerts_html:
+        alerts_html = '<tr><td colspan="6" style="color:#888;">Aucune alerte</td></tr>'
+    
+    page_content = '''
+    <div class="stats-grid">
+        <div class="stat-card danger"><h3>CRITICAL</h3><div class="value">''' + str(stats.get('by_severity', {}).get('critical', 0)) + '''</div></div>
+        <div class="stat-card warning"><h3>HIGH</h3><div class="value">''' + str(stats.get('by_severity', {}).get('high', 0)) + '''</div></div>
+        <div class="stat-card info"><h3>MEDIUM</h3><div class="value">''' + str(stats.get('by_severity', {}).get('medium', 0)) + '''</div></div>
+        <div class="stat-card"><h3>NON LU</h3><div class="value">''' + str(stats.get('unacknowledged', 0)) + '''</div></div>
+    </div>
+    
+    <div class="section">
+        <div class="section-header">
+            Alertes (''' + str(stats.get('total', 0)) + ''')
+            <div style="float:right;">
+                <select onchange="filterAlerts(this.value)" style="background:#111;color:#00ff00;border:1px solid #333;">
+                    <option value="">Toutes</option>
+                    <option value="CRITICAL">Critical</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                </select>
+            </div>
+        </div>
+        <div class="section-content" style="max-height:600px;">
+            <table id="alertsTable">
+                <thead><tr><th>Severite</th><th>Titre</th><th>Trigger</th><th>Domaine</th><th>Date</th><th>Action</th></tr></thead>
+                <tbody>''' + alerts_html + '''</tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+    function ackAlert(alertId) {
+        fetch("/api/acknowledge-alert", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({alert_id: alertId})
+        }).then(function() { location.reload(); });
+    }
+    
+    function filterAlerts(severity) {
+        var url = "/alerts-advanced";
+        if (severity) url += "?severity=" + severity;
+        window.location.href = url;
+    }
+    </script>'''
+    
+    return HTML_TEMPLATE.format(page_content=page_content, port=port, version=version, update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='')
+
+
+def render_watchlists(watchlists: Dict, port: int) -> str:
+    """Page des watchlists."""
+    version = "8.0.0"
+    
+    def render_list(items, list_type):
+        html = ""
+        for item in items:
+            html += f'''<tr>
+                <td>{html.escape(item)}</td>
+                <td><button class="btn btn-danger btn-small" onclick="removeWatchlist('{list_type}', '{html.escape(item)}')">×</button></td>
+            </tr>'''
+        if not html:
+            html = '<tr><td colspan="2" style="color:#888;">Vide</td></tr>'
+        return html
+    
+    page_content = '''
+    <div class="stats-grid">
+        <div class="stat-card"><h3>DOMAINES</h3><div class="value">''' + str(len(watchlists.get('domains', []))) + '''</div></div>
+        <div class="stat-card"><h3>EMAILS</h3><div class="value">''' + str(len(watchlists.get('emails', []))) + '''</div></div>
+        <div class="stat-card"><h3>WALLETS</h3><div class="value">''' + str(len(watchlists.get('wallets', []))) + '''</div></div>
+        <div class="stat-card danger"><h3>INTERNES</h3><div class="value">''' + str(len(watchlists.get('internal', []))) + '''</div></div>
+    </div>
+    
+    <div class="info-box">
+        <p><strong>Les watchlists declenchent des alertes CRITICAL/HIGH quand un element surveille est detecte.</strong></p>
+    </div>
+    
+    <div class="grid-2">
+        <div class="section">
+            <div class="section-header">Domaines a surveiller</div>
+            <div class="section-content">
+                <div class="form-row" style="margin-bottom:10px;">
+                    <input type="text" id="newDomain" placeholder="domaine.com">
+                    <button class="btn btn-primary" onclick="addWatchlist('domain', document.getElementById('newDomain').value)">+</button>
+                </div>
+                <table><tbody>''' + render_list(watchlists.get('domains', []), 'domain') + '''</tbody></table>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-header">Domaines internes (CRITICAL)</div>
+            <div class="section-content">
+                <div class="form-row" style="margin-bottom:10px;">
+                    <input type="text" id="newInternal" placeholder="internal.corp.com">
+                    <button class="btn btn-danger" onclick="addWatchlist('internal', document.getElementById('newInternal').value)">+</button>
+                </div>
+                <table><tbody>''' + render_list(watchlists.get('internal', []), 'internal') + '''</tbody></table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="grid-2">
+        <div class="section">
+            <div class="section-header">Emails a surveiller</div>
+            <div class="section-content">
+                <div class="form-row" style="margin-bottom:10px;">
+                    <input type="text" id="newEmail" placeholder="user@domain.com">
+                    <button class="btn btn-primary" onclick="addWatchlist('email', document.getElementById('newEmail').value)">+</button>
+                </div>
+                <table><tbody>''' + render_list(watchlists.get('emails', []), 'email') + '''</tbody></table>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-header">Wallets crypto a surveiller</div>
+            <div class="section-content">
+                <div class="form-row" style="margin-bottom:10px;">
+                    <input type="text" id="newWallet" placeholder="bc1q...">
+                    <button class="btn btn-primary" onclick="addWatchlist('wallet', document.getElementById('newWallet').value)">+</button>
+                </div>
+                <table><tbody>''' + render_list(watchlists.get('wallets', []), 'wallet') + '''</tbody></table>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    function addWatchlist(type, value) {
+        if (!value.trim()) return;
+        fetch("/api/add-watchlist", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({type: type, value: value.trim()})
+        }).then(function() { location.reload(); });
+    }
+    
+    function removeWatchlist(type, value) {
+        // TODO: implement remove
+        alert("Remove: " + type + " - " + value);
     }
     </script>'''
     

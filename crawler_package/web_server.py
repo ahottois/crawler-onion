@@ -23,6 +23,17 @@ from .security import (
     InputValidator, SecurityManager
 )
 
+# Import des nouveaux modules
+try:
+    from .entity_extractor import entity_extractor
+    from .nlp_analyzer import content_analyzer
+    from .osint_enricher import osint_enricher
+    from .correlation import entity_graph, correlation_engine
+    from .alert_manager import alert_manager, AlertSeverity
+    ADVANCED_MODULES = True
+except ImportError:
+    ADVANCED_MODULES = False
+
 
 class CrawlerWebServer:
     """Serveur web leger pour visualiser les resultats du crawler."""
@@ -489,6 +500,117 @@ class CrawlerWebServer:
         db = self._get_db()
         return db.get_domain_lists()
     
+    # ========== NOUVELLES API =========
+    
+    def _get_entity_graph(self, entity_id: int = None, limit: int = 100) -> Dict:
+        """Recupere le graphe d'entites."""
+        db = self._get_db()
+        return db.get_entity_graph(entity_id, limit)
+    
+    def _get_correlations(self, min_score: float = 0.7) -> Dict:
+        """Recupere les correlations."""
+        db = self._get_db()
+        return {
+            'correlations': db.get_high_correlations(min_score),
+            'cross_domain': db.get_cross_domain_entities(2, 50)
+        }
+    
+    def _analyze_content(self, url: str) -> Dict:
+        """Analyse NLP d'un contenu."""
+        if not ADVANCED_MODULES:
+            return {'error': 'Advanced modules not available'}
+        
+        db = self._get_db()
+        item = db.get_intel_item(url)
+        if not item:
+            return {'error': 'URL not found'}
+        
+        analysis = content_analyzer.analyze(item.get('title', ''), item.get('content_text', ''))
+        return {
+            'url': url,
+            'language': analysis.language,
+            'sentiment': analysis.sentiment,
+            'site_type': analysis.site_type,
+            'threat_indicators': analysis.threat_indicators,
+            'threat_score': analysis.threat_score,
+            'keywords': analysis.keywords,
+            'topics': analysis.topics
+        }
+    
+    def _enrich_entity(self, entity_type: str, value: str) -> Dict:
+        """Enrichit une entite."""
+        if not ADVANCED_MODULES:
+            return {'error': 'Advanced modules not available'}
+        
+        if entity_type == 'email':
+            return osint_enricher.enrich_email(value).__dict__
+        elif entity_type == 'domain':
+            return osint_enricher.enrich_domain(value).__dict__
+        elif entity_type.startswith('crypto'):
+            coin = entity_type.replace('crypto_', '')
+            return osint_enricher.enrich_wallet(value, coin).__dict__
+        elif entity_type == 'ip':
+            return osint_enricher.enrich_ip(value).__dict__
+        
+        return {'error': 'Unknown entity type'}
+    
+    def _get_alerts_advanced(self, severity: str = None, limit: int = 50) -> Dict:
+        """Alertes avancees avec stats."""
+        db = self._get_db()
+        
+        if ADVANCED_MODULES:
+            alerts = alert_manager.get_alerts(
+                severity=AlertSeverity[severity.upper()] if severity else None,
+                limit=limit
+            )
+            stats = alert_manager.get_stats()
+        else:
+            alerts = db.get_alerts(limit, severity=severity)
+            stats = {'total': len(alerts)}
+        
+        return {
+            'alerts': [{'id': a.id, 'severity': a.severity.name, 'title': a.title, 
+                       'description': a.description, 'trigger': a.trigger,
+                       'domain': a.domain, 'timestamp': a.timestamp,
+                       'acknowledged': a.acknowledged} for a in alerts] if ADVANCED_MODULES else alerts,
+            'stats': stats
+        }
+    
+    def _acknowledge_alert(self, alert_id: str, user: str = 'admin') -> Dict:
+        """Acquitte une alerte."""
+        if ADVANCED_MODULES:
+            success = alert_manager.acknowledge_alert(alert_id, user)
+        else:
+            success = True
+        return {'success': success}
+    
+    def _add_watchlist(self, item_type: str, value: str, ip: str) -> Dict:
+        """Ajoute a la watchlist."""
+        AuditLogger.log('WATCHLIST_ADD', ip, {'type': item_type, 'value': value})
+        
+        if ADVANCED_MODULES:
+            if item_type == 'domain':
+                alert_manager.watchlist_domains.add(value)
+            elif item_type == 'email':
+                alert_manager.watchlist_emails.add(value)
+            elif item_type == 'wallet':
+                alert_manager.watchlist_wallets.add(value)
+            elif item_type == 'internal':
+                alert_manager.internal_domains.add(value)
+        
+        return {'success': True, 'message': f'{value} ajoute a la watchlist {item_type}'}
+    
+    def _get_watchlists(self) -> Dict:
+        """Recupere les watchlists."""
+        if ADVANCED_MODULES:
+            return {
+                'domains': list(alert_manager.watchlist_domains),
+                'emails': list(alert_manager.watchlist_emails),
+                'wallets': list(alert_manager.watchlist_wallets),
+                'internal': list(alert_manager.internal_domains)
+            }
+        return {'domains': [], 'emails': [], 'wallets': [], 'internal': []}
+    
     # ========== HANDLER ==========[]
     
     def _create_handler(self):
@@ -636,6 +758,27 @@ class CrawlerWebServer:
                     self._send_json(server_instance._get_daemon_logs(lines))
                 elif path == '/api/domain-lists':
                     self._send_json(server_instance._get_domain_lists())
+                # API GET - Ajouter ces routes dans do_GET du Handler
+                elif path == '/api/entity-graph':
+                    entity_id = int(params.get('id', ['0'])[0]) or None
+                    limit = int(params.get('limit', ['100'])[0])
+                    self._send_json(server_instance._get_entity_graph(entity_id, limit))
+                elif path == '/api/correlations':
+                    min_score = float(params.get('min', ['0.7'])[0])
+                    self._send_json(server_instance._get_correlations(min_score))
+                elif path == '/api/analyze':
+                    url = unquote(params.get('url', [''])[0])
+                    self._send_json(server_instance._analyze_content(url))
+                elif path == '/api/enrich':
+                    etype = params.get('type', [''])[0]
+                    value = params.get('value', [''])[0]
+                    self._send_json(server_instance._enrich_entity(etype, value))
+                elif path == '/api/alerts-advanced':
+                    severity = params.get('severity', [None])[0]
+                    limit = int(params.get('limit', ['50'])[0])
+                    self._send_json(server_instance._get_alerts_advanced(severity, limit))
+                elif path == '/api/watchlists':
+                    self._send_json(server_instance._get_watchlists())
                 else:
                     self.send_response(404)
                     self.end_headers()
@@ -704,6 +847,20 @@ class CrawlerWebServer:
                     result = server_instance._mark_alerts_read()
                 elif self.path == '/api/clear-alerts':
                     result = server_instance._clear_alerts()
+                # API POST - Ajouter ces routes dans do_POST du Handler
+                elif self.path == '/api/acknowledge-alert':
+                    result = server_instance._acknowledge_alert(data.get('alert_id', ''), data.get('user', 'admin'))
+                elif self.path == '/api/add-watchlist':
+                    result = server_instance._add_watchlist(data.get('type', ''), data.get('value', ''), ip)
+                elif self.path == '/api/logout':
+                    token = self._get_token()
+                    if token:
+                        server_instance.security.logout(token, ip)
+                    result = {'success': True, 'message': 'Logged out'}
+                elif self.path == '/api/refresh-token':
+                    token = data.get('refresh_token', '')
+                    success, tokens, error = server_instance.security.refresh_token(token, ip)
+                    result = tokens if success else {'success': False, 'message': error}
                 else:
                     self.send_response(404)
                     self.end_headers()

@@ -12,7 +12,7 @@ class Config:
     """Configuration centralisee du crawler."""
     
     # Version et infos du projet
-    version: str = "7.1.0"
+    version: str = "8.0.0"
     repo_owner: str = "ahottois"
     repo_name: str = "crawler-onion"
     

@@ -1,6 +1,6 @@
 """
 Module de gestion de la base de donnees SQLite.
-Stocke les resultats du crawling avec recherche FTS5.
+Stocke les resultats du crawling avec recherche FTS5 et chiffrement.
 """
 
 import sqlite3
@@ -17,8 +17,19 @@ import threading
 from .logger import Log
 
 
+# Import optionnel du chiffrement
+try:
+    from .encryption import encryptor, EncryptionConfig
+    ENCRYPTION_AVAILABLE = True
+except ImportError:
+    ENCRYPTION_AVAILABLE = False
+    encryptor = None
+
+
 class DatabaseManager:
-    """Gestionnaire de base de donnees SQLite thread-safe avec FTS5."""
+    """Gestionnaire de base de donnees SQLite thread-safe avec FTS5 et chiffrement."""
+    
+    SENSITIVE_FIELDS = ['emails', 'ip_leaks', 'secrets_found']
     
     def __init__(self, db_file: str):
         self.db_file = db_file
@@ -35,10 +46,40 @@ class DatabaseManager:
         finally:
             conn.close()
     
+    def _encrypt_sensitive(self, data: Dict) -> Dict:
+        """Chiffre les champs sensibles."""
+        if not ENCRYPTION_AVAILABLE or not EncryptionConfig.ENCRYPTION_ENABLED:
+            return data
+        
+        result = data.copy()
+        for field in self.SENSITIVE_FIELDS:
+            if field in result and result[field]:
+                if isinstance(result[field], list):
+                    result[field] = [encryptor.cipher.encrypt(str(v)) for v in result[field]]
+                elif isinstance(result[field], dict):
+                    result[field] = {k: [encryptor.cipher.encrypt(str(v)) for v in vals] 
+                                    for k, vals in result[field].items()}
+        return result
+    
+    def _decrypt_sensitive(self, data: Dict) -> Dict:
+        """Dechiffre les champs sensibles."""
+        if not ENCRYPTION_AVAILABLE:
+            return data
+        
+        result = data.copy()
+        for field in self.SENSITIVE_FIELDS:
+            if field in result and result[field]:
+                if isinstance(result[field], list):
+                    result[field] = [encryptor.cipher.decrypt(str(v)) for v in result[field]]
+                elif isinstance(result[field], dict):
+                    result[field] = {k: [encryptor.cipher.decrypt(str(v)) for v in vals]
+                                    for k, vals in result[field].items()}
+        return result
+    
     def _init_db(self):
         """Initialise le schema complet de la base."""
         with self._get_connection() as conn:
-            # Table principale
+            # Table principale intel
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS intel (
                     url TEXT PRIMARY KEY,
@@ -56,16 +97,21 @@ class DatabaseManager:
                     json_data TEXT DEFAULT '[]',
                     content_length INTEGER DEFAULT 0,
                     content_text TEXT DEFAULT '',
+                    content_hash TEXT DEFAULT '',
                     language TEXT DEFAULT '',
                     keywords TEXT DEFAULT '[]',
                     category TEXT DEFAULT '',
+                    site_type TEXT DEFAULT '',
                     tags TEXT DEFAULT '[]',
                     risk_score INTEGER DEFAULT 0,
+                    threat_score REAL DEFAULT 0,
                     priority_score INTEGER DEFAULT 50,
                     crawl_count INTEGER DEFAULT 0,
                     intel_density REAL DEFAULT 0,
+                    sentiment_score REAL DEFAULT 0,
                     marked_important INTEGER DEFAULT 0,
                     marked_false_positive INTEGER DEFAULT 0,
+                    encrypted INTEGER DEFAULT 0,
                     found_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_crawl TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -76,6 +122,7 @@ class DatabaseManager:
             conn.execute('CREATE INDEX IF NOT EXISTS idx_priority ON intel(priority_score)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_found_at ON intel(found_at)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_category ON intel(category)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_site_type ON intel(site_type)')
             
             # Table FTS5 pour recherche full-text
             try:
@@ -86,7 +133,7 @@ class DatabaseManager:
                     )
                 ''')
             except:
-                pass  # FTS5 peut ne pas etre disponible
+                pass
             
             # Table pour les domaines avec profils
             conn.execute('''
@@ -103,6 +150,7 @@ class DatabaseManager:
                     total_pages INTEGER DEFAULT 0,
                     success_pages INTEGER DEFAULT 0,
                     intel_count INTEGER DEFAULT 0,
+                    avg_risk_score REAL DEFAULT 0,
                     last_intel_at TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -120,33 +168,44 @@ class DatabaseManager:
                 )
             ''')
             
-            # Table pour les alertes
+            # Table pour les alertes avancees
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS alerts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    alert_id TEXT UNIQUE,
                     type TEXT,
+                    severity TEXT DEFAULT 'info',
+                    trigger TEXT DEFAULT '',
+                    title TEXT,
                     message TEXT,
                     url TEXT,
                     domain TEXT,
-                    severity TEXT DEFAULT 'info',
-                    data TEXT DEFAULT '{}',
+                    entities TEXT DEFAULT '{}',
+                    metadata TEXT DEFAULT '{}',
                     webhook_sent INTEGER DEFAULT 0,
                     read INTEGER DEFAULT 0,
+                    acknowledged INTEGER DEFAULT 0,
+                    acknowledged_by TEXT,
+                    acknowledged_at TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_alert_severity ON alerts(severity)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_alert_read ON alerts(read)')
             
             # Table pour les stats horaires
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS hourly_stats (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    hour TEXT,
+                    hour TEXT UNIQUE,
                     urls_crawled INTEGER DEFAULT 0,
                     success_count INTEGER DEFAULT 0,
                     error_count INTEGER DEFAULT 0,
                     new_domains INTEGER DEFAULT 0,
                     intel_found INTEGER DEFAULT 0,
-                    queue_size INTEGER DEFAULT 0
+                    queue_size INTEGER DEFAULT 0,
+                    alerts_created INTEGER DEFAULT 0,
+                    avg_response_time REAL DEFAULT 0
                 )
             ''')
             
@@ -163,23 +222,93 @@ class DatabaseManager:
                 )
             ''')
             
-            # Table pour les entites OSINT
+            # Table pour les entites OSINT enrichie
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS entities (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     entity_type TEXT,
+                    subtype TEXT DEFAULT '',
                     value TEXT,
                     normalized_value TEXT,
                     source_url TEXT,
                     source_domain TEXT,
+                    confidence REAL DEFAULT 0.5,
+                    validated INTEGER DEFAULT 0,
+                    enriched INTEGER DEFAULT 0,
+                    risk_score REAL DEFAULT 0,
                     metadata TEXT DEFAULT '{}',
+                    enrichment_data TEXT DEFAULT '{}',
                     first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    occurrence_count INTEGER DEFAULT 1,
                     UNIQUE(entity_type, value)
                 )
             ''')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_type ON entities(entity_type)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_value ON entities(value)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_domain ON entities(source_domain)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_entity_risk ON entities(risk_score)')
+            
+            # Table pour le graphe d'entites (edges)
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS entity_graph (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_entity_id INTEGER,
+                    target_entity_id INTEGER,
+                    relationship TEXT DEFAULT 'co-occurrence',
+                    weight REAL DEFAULT 1.0,
+                    evidence TEXT DEFAULT '[]',
+                    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    occurrence_count INTEGER DEFAULT 1,
+                    UNIQUE(source_entity_id, target_entity_id),
+                    FOREIGN KEY(source_entity_id) REFERENCES entities(id),
+                    FOREIGN KEY(target_entity_id) REFERENCES entities(id)
+                )
+            ''')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_graph_source ON entity_graph(source_entity_id)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_graph_target ON entity_graph(target_entity_id)')
+            
+            # Table pour les correlations detectees
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS correlations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity1_id INTEGER,
+                    entity2_id INTEGER,
+                    correlation_score REAL,
+                    confidence REAL,
+                    relationship_type TEXT,
+                    evidence TEXT DEFAULT '[]',
+                    interpretation TEXT DEFAULT '',
+                    status TEXT DEFAULT 'pending',
+                    reviewed_by TEXT,
+                    reviewed_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(entity1_id) REFERENCES entities(id),
+                    FOREIGN KEY(entity2_id) REFERENCES entities(id)
+                )
+            ''')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_corr_score ON correlations(correlation_score)')
+            
+            # Table pour l'audit
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT,
+                    event_type TEXT,
+                    user_id TEXT,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    action TEXT,
+                    query TEXT,
+                    details TEXT DEFAULT '{}',
+                    response_time_ms INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'success',
+                    signature TEXT
+                )
+            ''')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(timestamp)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id)')
             
             # Migration colonnes
             self._migrate_columns(conn)
@@ -189,16 +318,39 @@ class DatabaseManager:
         existing = self._get_existing_columns(conn, 'intel')
         new_columns = {
             'content_text': 'TEXT DEFAULT ""',
+            'content_hash': 'TEXT DEFAULT ""',
             'priority_score': 'INTEGER DEFAULT 50',
             'crawl_count': 'INTEGER DEFAULT 0',
             'intel_density': 'REAL DEFAULT 0',
+            'threat_score': 'REAL DEFAULT 0',
+            'sentiment_score': 'REAL DEFAULT 0',
+            'site_type': 'TEXT DEFAULT ""',
             'marked_important': 'INTEGER DEFAULT 0',
-            'marked_false_positive': 'INTEGER DEFAULT 0'
+            'marked_false_positive': 'INTEGER DEFAULT 0',
+            'encrypted': 'INTEGER DEFAULT 0'
         }
         for col, col_type in new_columns.items():
             if col not in existing:
                 try:
                     conn.execute(f'ALTER TABLE intel ADD COLUMN {col} {col_type}')
+                except:
+                    pass
+        
+        # Migration entities
+        existing_entities = self._get_existing_columns(conn, 'entities')
+        entity_columns = {
+            'subtype': 'TEXT DEFAULT ""',
+            'confidence': 'REAL DEFAULT 0.5',
+            'validated': 'INTEGER DEFAULT 0',
+            'enriched': 'INTEGER DEFAULT 0',
+            'risk_score': 'REAL DEFAULT 0',
+            'enrichment_data': 'TEXT DEFAULT "{}"',
+            'occurrence_count': 'INTEGER DEFAULT 1'
+        }
+        for col, col_type in entity_columns.items():
+            if col not in existing_entities:
+                try:
+                    conn.execute(f'ALTER TABLE entities ADD COLUMN {col} {col_type}')
                 except:
                     pass
     
@@ -213,17 +365,25 @@ class DatabaseManager:
         risk_score = self._calculate_risk_score(data)
         intel_density = self._calculate_intel_density(data)
         
+        # Chiffrer les donnees sensibles si active
+        if ENCRYPTION_AVAILABLE and EncryptionConfig.ENCRYPTION_ENABLED:
+            data = self._encrypt_sensitive(data)
+            encrypted = 1
+        else:
+            encrypted = 0
+        
         with self._lock:
             with self._get_connection() as conn:
-                # Sauvegarder dans intel
                 conn.execute('''
                     INSERT OR REPLACE INTO intel 
                     (url, domain, title, status, depth, tech_stack, secrets_found, 
                      ip_leaks, emails, comments, cryptos, socials, json_data, 
-                     content_length, content_text, language, category, 
-                     risk_score, intel_density, crawl_count, last_crawl)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                            ?, ?, COALESCE((SELECT crawl_count FROM intel WHERE url = ?) + 1, 1),
+                     content_length, content_text, language, category, site_type,
+                     risk_score, threat_score, intel_density, sentiment_score, 
+                     encrypted, crawl_count, last_crawl)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                            ?, ?, ?, ?, ?,
+                            COALESCE((SELECT crawl_count FROM intel WHERE url = ?) + 1, 1),
                             CURRENT_TIMESTAMP)
                 ''', (
                     data['url'], domain, data.get('title', ''), data.get('status', 0),
@@ -233,14 +393,16 @@ class DatabaseManager:
                     json.dumps(data.get('cryptos', {})), json.dumps(data.get('socials', {})),
                     json.dumps(data.get('json_data', [])), data.get('content_length', 0),
                     data.get('content_text', '')[:5000], data.get('language', ''),
-                    data.get('category', ''), risk_score, intel_density, data['url']
+                    data.get('category', ''), data.get('site_type', ''),
+                    risk_score, data.get('threat_score', 0), intel_density,
+                    data.get('sentiment_score', 0), encrypted, data['url']
                 ))
                 
                 # Mettre a jour stats domaine
                 self._update_domain_stats(conn, domain, data)
                 
                 # Extraire et sauvegarder entites OSINT
-                self._extract_entities(conn, data, domain)
+                self._extract_entities_advanced(conn, data, domain)
                 
                 # Creer alertes si necessaire
                 if risk_score >= 70:
@@ -316,42 +478,237 @@ class DatabaseManager:
               1 if has_intel else 0,
               has_intel))
     
-    def _extract_entities(self, conn, data: Dict, domain: str):
-        """Extrait et sauvegarde les entites OSINT."""
+    def _extract_entities_advanced(self, conn, data: Dict, domain: str):
+        """Extrait et sauvegarde les entites OSINT avec enrichissement."""
         url = data['url']
+        entity_ids = []
         
         # Emails
         for email in data.get('emails', [])[:50]:
-            self._save_entity(conn, 'email', email, url, domain)
+            eid = self._save_entity_advanced(conn, 'email', '', email, url, domain, 0.9)
+            if eid:
+                entity_ids.append(eid)
         
         # Crypto
         for coin, addresses in data.get('cryptos', {}).items():
             for addr in addresses[:20]:
-                self._save_entity(conn, f'crypto_{coin}', addr, url, domain, {'coin': coin})
+                eid = self._save_entity_advanced(conn, 'crypto', coin, addr, url, domain, 0.85)
+                if eid:
+                    entity_ids.append(eid)
         
         # Socials
         for network, handles in data.get('socials', {}).items():
             for handle in handles[:10]:
-                self._save_entity(conn, f'social_{network}', handle, url, domain)
+                eid = self._save_entity_advanced(conn, 'social', network, handle, url, domain, 0.80)
+                if eid:
+                    entity_ids.append(eid)
+        
+        # Creer les liens de co-occurrence
+        for i, source_id in enumerate(entity_ids):
+            for target_id in entity_ids[i+1:]:
+                self._save_entity_edge(conn, source_id, target_id, 'co-occurrence', url)
     
-    def _save_entity(self, conn, entity_type: str, value: str, url: str, domain: str, metadata: Dict = None):
-        """Sauvegarde une entite."""
+    def _save_entity_advanced(self, conn, entity_type: str, subtype: str, value: str, 
+                              url: str, domain: str, confidence: float = 0.5,
+                              metadata: Dict = None) -> Optional[int]:
+        """Sauvegarde une entite avec metadonnees."""
+        try:
+            cursor = conn.execute('''
+                INSERT INTO entities (entity_type, subtype, value, normalized_value, 
+                                     source_url, source_domain, confidence, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(entity_type, value) DO UPDATE SET
+                    last_seen = CURRENT_TIMESTAMP,
+                    occurrence_count = occurrence_count + 1
+                RETURNING id
+            ''', (entity_type, subtype, value, value.lower(), url, domain, 
+                  confidence, json.dumps(metadata or {})))
+            row = cursor.fetchone()
+            return row[0] if row else None
+        except Exception as e:
+            # Fallback pour SQLite < 3.35
+            try:
+                conn.execute('''
+                    INSERT OR REPLACE INTO entities 
+                    (entity_type, subtype, value, normalized_value, source_url, source_domain, confidence, metadata)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (entity_type, subtype, value, value.lower(), url, domain,
+                      confidence, json.dumps(metadata or {})))
+                cursor = conn.execute(
+                    "SELECT id FROM entities WHERE entity_type = ? AND value = ?",
+                    (entity_type, value)
+                )
+                row = cursor.fetchone()
+                return row[0] if row else None
+            except:
+                return None
+    
+    def _save_entity_edge(self, conn, source_id: int, target_id: int, 
+                          relationship: str, evidence: str):
+        """Sauvegarde un lien entre entites."""
+        if not source_id or not target_id:
+            return
+        
+        # Ordre consistant
+        if source_id > target_id:
+            source_id, target_id = target_id, source_id
+        
         try:
             conn.execute('''
-                INSERT INTO entities (entity_type, value, normalized_value, source_url, source_domain, metadata)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(entity_type, value) DO UPDATE SET
-                    last_seen = CURRENT_TIMESTAMP
-            ''', (entity_type, value, value.lower(), url, domain, json.dumps(metadata or {})))
+                INSERT INTO entity_graph (source_entity_id, target_entity_id, relationship, evidence)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(source_entity_id, target_entity_id) DO UPDATE SET
+                    last_seen = CURRENT_TIMESTAMP,
+                    occurrence_count = occurrence_count + 1,
+                    weight = weight + 0.1
+            ''', (source_id, target_id, relationship, json.dumps([evidence])))
         except:
             pass
     
-    def _create_alert(self, conn, alert_type: str, message: str, url: str, domain: str, severity: str, data: Dict = None):
+    def _create_alert(self, conn, alert_type: str, message: str, url: str, 
+                      domain: str, severity: str, data: Dict = None):
         """Cree une nouvelle alerte."""
+        alert_id = f"ALT-{datetime.now().strftime('%Y%m%d%H%M%S')}-{hash(url) % 10000:04d}"
         conn.execute('''
-            INSERT INTO alerts (type, message, url, domain, severity, data)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (alert_type, message, url, domain, severity, json.dumps(data or {})))
+            INSERT INTO alerts (alert_id, type, title, message, url, domain, severity, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (alert_id, alert_type, message[:100], message, url, domain, 
+              severity, json.dumps(data or {})))
+    
+    # ========== GRAPHE D'ENTITES ==========
+    
+    def get_entity_graph(self, entity_id: int = None, limit: int = 100) -> Dict:
+        """Recupere le graphe d'entites."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            
+            # Noeuds
+            if entity_id:
+                cursor = conn.execute("""
+                    SELECT e.* FROM entities e
+                    JOIN entity_graph g ON e.id = g.source_entity_id OR e.id = g.target_entity_id
+                    WHERE g.source_entity_id = ? OR g.target_entity_id = ?
+                    LIMIT ?
+                """, (entity_id, entity_id, limit))
+            else:
+                cursor = conn.execute("""
+                    SELECT * FROM entities ORDER BY occurrence_count DESC LIMIT ?
+                """, (limit,))
+            
+            nodes = [dict(row) for row in cursor.fetchall()]
+            node_ids = {n['id'] for n in nodes}
+            
+            # Edges
+            if node_ids:
+                placeholders = ','.join('?' * len(node_ids))
+                cursor = conn.execute(f"""
+                    SELECT * FROM entity_graph 
+                    WHERE source_entity_id IN ({placeholders}) 
+                       OR target_entity_id IN ({placeholders})
+                """, list(node_ids) + list(node_ids))
+                edges = [dict(row) for row in cursor.fetchall()]
+            else:
+                edges = []
+            
+            return {
+                'nodes': nodes,
+                'edges': edges,
+                'stats': {
+                    'total_nodes': len(nodes),
+                    'total_edges': len(edges)
+                }
+            }
+    
+    def get_cross_domain_entities(self, min_domains: int = 2, limit: int = 100) -> List[Dict]:
+        """Recupere les entites presentes sur plusieurs domaines."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT entity_type, value, COUNT(DISTINCT source_domain) as domain_count,
+                       GROUP_CONCAT(DISTINCT source_domain) as domains,
+                       SUM(occurrence_count) as total_occurrences,
+                       MAX(risk_score) as max_risk
+                FROM entities
+                GROUP BY entity_type, value
+                HAVING domain_count >= ?
+                ORDER BY domain_count DESC, total_occurrences DESC
+                LIMIT ?
+            """, (min_domains, limit))
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def save_correlation(self, entity1_id: int, entity2_id: int, score: float,
+                        confidence: float, relationship: str, evidence: List[str],
+                        interpretation: str = ""):
+        """Sauvegarde une correlation."""
+        with self._get_connection() as conn:
+            conn.execute('''
+                INSERT INTO correlations 
+                (entity1_id, entity2_id, correlation_score, confidence, 
+                 relationship_type, evidence, interpretation)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (entity1_id, entity2_id, score, confidence, relationship,
+                  json.dumps(evidence), interpretation))
+    
+    def get_high_correlations(self, min_score: float = 0.7, limit: int = 50) -> List[Dict]:
+        """Recupere les correlations elevees."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT c.*, 
+                       e1.entity_type as entity1_type, e1.value as entity1_value,
+                       e2.entity_type as entity2_type, e2.value as entity2_value
+                FROM correlations c
+                JOIN entities e1 ON c.entity1_id = e1.id
+                JOIN entities e2 ON c.entity2_id = e2.id
+                WHERE c.correlation_score >= ?
+                ORDER BY c.correlation_score DESC
+                LIMIT ?
+            """, (min_score, limit))
+            return [dict(row) for row in cursor.fetchall()]
+    
+    # ========== AUDIT ==========
+    
+    def log_audit(self, event_type: str, user_id: str, ip: str, user_agent: str,
+                  action: str = None, query: str = None, details: Dict = None,
+                  response_time_ms: int = 0, status: str = 'success', signature: str = ''):
+        """Enregistre un log d'audit."""
+        with self._get_connection() as conn:
+            conn.execute('''
+                INSERT INTO audit_log 
+                (timestamp, event_type, user_id, ip_address, user_agent, action, 
+                 query, details, response_time_ms, status, signature)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (datetime.utcnow().isoformat(), event_type, user_id, ip, user_agent,
+                  action, query, json.dumps(details or {}), response_time_ms, 
+                  status, signature))
+    
+    def get_audit_logs(self, user: str = None, event_type: str = None,
+                       days: int = None, limit: int = 100) -> List[Dict]:
+        """Recupere les logs d'audit."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            
+            where = []
+            params = []
+            
+            if user:
+                where.append("user_id = ?")
+                params.append(user)
+            if event_type:
+                where.append("event_type = ?")
+                params.append(event_type)
+            if days:
+                where.append("timestamp >= datetime('now', ?)")
+                params.append(f'-{days} days')
+            
+            sql = "SELECT * FROM audit_log"
+            if where:
+                sql += " WHERE " + " AND ".join(where)
+            sql += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor = conn.execute(sql, params)
+            return [dict(row) for row in cursor.fetchall()]
     
     # ========== RECHERCHE FULL-TEXT ==========
     
@@ -360,17 +717,15 @@ class DatabaseManager:
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             
-            # Construction requete
             where_clauses = ["status = 200"]
             params = []
             
             if query:
-                where_clauses.append("(title LIKE ? OR domain LIKE ? OR url LIKE ? OR content_text LIKE ?)")
+                where_clauses.append("(title LIKE ? OR domain LIKE ? OR url LIKE ? OR content_text LIKE ?}")
                 search_pattern = f"%{query}%"
                 params.extend([search_pattern] * 4)
             
             if filters:
-                # Filtre temporel
                 if filters.get('time_range'):
                     time_map = {
                         'hour': '-1 hour', 'day': '-1 day', 
@@ -380,7 +735,6 @@ class DatabaseManager:
                         where_clauses.append(f"found_at >= datetime('now', ?)")
                         params.append(time_map[filters['time_range']])
                 
-                # Filtre par type d'intel
                 if filters.get('intel_type'):
                     type_map = {
                         'crypto': "cryptos != '{}'",
@@ -392,26 +746,21 @@ class DatabaseManager:
                     if filters['intel_type'] in type_map:
                         where_clauses.append(type_map[filters['intel_type']])
                 
-                # Filtre par risque
                 if filters.get('min_risk'):
                     where_clauses.append("risk_score >= ?")
                     params.append(filters['min_risk'])
                 
-                # Filtre par categorie
                 if filters.get('category'):
                     where_clauses.append("category = ?")
                     params.append(filters['category'])
                 
-                # Filtre par domaine
                 if filters.get('domain'):
                     where_clauses.append("domain LIKE ?")
                     params.append(f"%{filters['domain']}%")
                 
-                # Exclure faux positifs
                 if filters.get('exclude_false_positive'):
                     where_clauses.append("marked_false_positive = 0")
                 
-                # Seulement importants
                 if filters.get('important_only'):
                     where_clauses.append("marked_important = 1")
             
@@ -442,6 +791,11 @@ class DatabaseManager:
                         data[field] = json.loads(data[field]) if data.get(field) else []
                     except:
                         data[field] = []
+                
+                # Dechiffrer si necessaire
+                if data.get('encrypted') and ENCRYPTION_AVAILABLE:
+                    data = self._decrypt_sensitive(data)
+                
                 results.append(data)
             
             return results, total
@@ -465,9 +819,12 @@ class DatabaseManager:
                 except:
                     data[field] = []
             
-            # Recuperer entites liees
+            # Dechiffrer si necessaire
+            if data.get('encrypted') and ENCRYPTION_AVAILABLE:
+                data = self._decrypt_sensitive(data)
+            
             cursor = conn.execute("""
-                SELECT entity_type, value, first_seen FROM entities 
+                SELECT entity_type, value, first_seen, confidence, enriched FROM entities 
                 WHERE source_url = ? ORDER BY entity_type
             """, (url,))
             data['entities'] = [dict(r) for r in cursor.fetchall()]
@@ -475,7 +832,7 @@ class DatabaseManager:
             return data
     
     def mark_intel(self, url: str, mark_type: str, value: bool = True):
-        """Marque un item intel (important, faux_positif)."""
+        """Marque un item intel."""
         column = 'marked_important' if mark_type == 'important' else 'marked_false_positive'
         with self._get_connection() as conn:
             conn.execute(f"UPDATE intel SET {column} = ? WHERE url = ?", (1 if value else 0, url))
@@ -617,7 +974,7 @@ class DatabaseManager:
                 INSERT INTO hourly_stats (hour, urls_crawled, success_count, error_count, 
                                          new_domains, intel_found, queue_size)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT DO UPDATE SET
+                ON CONFLICT(hour) DO UPDATE SET
                     urls_crawled = urls_crawled + ?,
                     success_count = success_count + ?,
                     error_count = error_count + ?,
@@ -669,8 +1026,6 @@ class DatabaseManager:
                 'total_errors': server_errors + client_errors
             }
     
-    # ========== ENTITES OSINT ==========
-    
     def get_entities(self, entity_type: str = None, limit: int = 100) -> List[Dict]:
         """Recupere les entites extraites."""
         with self._get_connection() as conn:
@@ -681,7 +1036,7 @@ class DatabaseManager:
             if entity_type:
                 sql += " WHERE entity_type = ?"
                 params.append(entity_type)
-            sql += " ORDER BY last_seen DESC LIMIT ?"
+            sql += " ORDER BY occurrence_count DESC, last_seen DESC LIMIT ?"
             params.append(limit)
             
             cursor = conn.execute(sql, params)
@@ -691,15 +1046,16 @@ class DatabaseManager:
         """Stats sur les entites."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
-                SELECT entity_type, COUNT(*) as count FROM entities 
+                SELECT entity_type, COUNT(*) as count, 
+                       SUM(occurrence_count) as total_occurrences
+                FROM entities 
                 GROUP BY entity_type ORDER BY count DESC
             """)
-            return {row[0]: row[1] for row in cursor.fetchall()}
+            return {row[0]: {'unique': row[1], 'total': row[2]} for row in cursor.fetchall()}
     
     # ========== ALERTES ==========
     
-    def get_alerts(self, limit: int = 50, unread_only: bool = False, 
-                   severity: str = None) -> List[Dict]:
+    def get_alerts(self, limit: int = 50, unread_only: bool = False, severity: str = None) -> List[Dict]:
         """Recupere les alertes."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
@@ -723,32 +1079,14 @@ class DatabaseManager:
             for row in cursor.fetchall():
                 data = dict(row)
                 try:
-                    data['data'] = json.loads(data['data']) if data.get('data') else {}
+                    data['metadata'] = json.loads(data.get('metadata', '{}'))
+                    data['entities'] = json.loads(data.get('entities', '{}'))
                 except:
-                    data['data'] = {}
+                    pass
                 results.append(data)
             return results
     
-    def get_alerts_for_webhook(self) -> List[Dict]:
-        """Recupere les alertes non envoyees par webhook."""
-        with self._get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.execute("""
-                SELECT * FROM alerts WHERE webhook_sent = 0 
-                ORDER BY created_at ASC LIMIT 50
-            """)
-            return [dict(row) for row in cursor.fetchall()]
-    
-    def mark_alerts_sent(self, alert_ids: List[int]):
-        """Marque les alertes comme envoyees."""
-        if not alert_ids:
-            return
-        with self._get_connection() as conn:
-            placeholders = ','.join('?' * len(alert_ids))
-            conn.execute(f"UPDATE alerts SET webhook_sent = 1 WHERE id IN ({placeholders})", alert_ids)
-    
     def mark_alerts_read(self, alert_ids: List[int] = None):
-        """Marque les alertes comme lues."""
         with self._get_connection() as conn:
             if alert_ids:
                 placeholders = ','.join('?' * len(alert_ids))
@@ -757,14 +1095,10 @@ class DatabaseManager:
                 conn.execute("UPDATE alerts SET read = 1")
     
     def clear_alerts(self):
-        """Supprime les alertes."""
         with self._get_connection() as conn:
             conn.execute("DELETE FROM alerts")
     
-    # ========== BLACKLIST/WHITELIST ==========
-    
     def add_to_blacklist(self, domain: str, reason: str = ""):
-        """Ajoute a la blacklist."""
         with self._get_connection() as conn:
             conn.execute('''
                 INSERT OR REPLACE INTO domain_lists (domain, list_type, reason)
@@ -772,7 +1106,6 @@ class DatabaseManager:
             ''', (domain, reason))
     
     def add_to_whitelist(self, domain: str, reason: str = ""):
-        """Ajoute a la whitelist."""
         with self._get_connection() as conn:
             conn.execute('''
                 INSERT OR REPLACE INTO domain_lists (domain, list_type, reason)
@@ -780,7 +1113,6 @@ class DatabaseManager:
             ''', (domain, reason))
     
     def is_blacklisted(self, domain: str) -> bool:
-        """Verifie si blackliste."""
         with self._get_connection() as conn:
             cursor = conn.execute(
                 "SELECT 1 FROM domain_lists WHERE domain = ? AND list_type = 'blacklist'",
@@ -789,7 +1121,6 @@ class DatabaseManager:
             return cursor.fetchone() is not None
     
     def get_domain_lists(self) -> Dict[str, List[Dict]]:
-        """Recupere les listes."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("SELECT * FROM domain_lists ORDER BY added_at DESC")
@@ -800,20 +1131,15 @@ class DatabaseManager:
             }
     
     def remove_from_list(self, domain: str):
-        """Retire des listes."""
         with self._get_connection() as conn:
             conn.execute("DELETE FROM domain_lists WHERE domain = ?", (domain,))
     
-    # ========== EXPORTS ==========
-    
     def get_visited_urls(self) -> Set[str]:
-        """URLs visitees."""
         with self._get_connection() as conn:
             cursor = conn.execute("SELECT url FROM intel")
             return {row[0] for row in cursor.fetchall()}
     
     def get_stats(self) -> Dict[str, Any]:
-        """Stats completes."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT 
@@ -836,6 +1162,12 @@ class DatabaseManager:
             except:
                 unread_alerts = 0
             
+            try:
+                cursor4 = conn.execute("SELECT COUNT(*) FROM entities")
+                total_entities = cursor4.fetchone()[0]
+            except:
+                total_entities = 0
+            
             return {
                 'total': row[0] or 0,
                 'success': row[1] or 0,
@@ -846,18 +1178,17 @@ class DatabaseManager:
                 'avg_risk': round(row[6] or 0, 1),
                 'max_risk': row[7] or 0,
                 'total_size_mb': round((row[8] or 0) / 1024 / 1024, 2),
-                'unread_alerts': unread_alerts
+                'unread_alerts': unread_alerts,
+                'total_entities': total_entities
             }
     
     def export_json(self, filepath: str, filters: Dict = None) -> int:
-        """Export JSON."""
         results, _ = self.search_fulltext('', filters, limit=10000)
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, ensure_ascii=False, default=str)
         return len(results)
     
     def export_csv(self, filepath: str, include_all: bool = False) -> int:
-        """Export CSV."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             
@@ -895,7 +1226,6 @@ class DatabaseManager:
             return len(rows)
     
     def export_emails(self, filepath: str) -> int:
-        """Export emails."""
         with self._get_connection() as conn:
             cursor = conn.execute("SELECT DISTINCT value FROM entities WHERE entity_type = 'email'")
             emails = [row[0] for row in cursor.fetchall()]
@@ -908,7 +1238,6 @@ class DatabaseManager:
             return len(emails)
     
     def export_crypto(self, filepath: str) -> int:
-        """Export crypto."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT entity_type, value FROM entities 
@@ -933,7 +1262,6 @@ class DatabaseManager:
             return total
     
     def get_timeline_stats(self, days: int = 7) -> List[Dict]:
-        """Stats par jour."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT DATE(found_at) as date, COUNT(*) as total,
@@ -945,7 +1273,6 @@ class DatabaseManager:
             return [{'date': r[0], 'total': r[1], 'success': r[2], 'domains': r[3]} for r in cursor.fetchall()]
     
     def get_pending_urls(self, limit: int = 1000) -> List[tuple]:
-        """URLs en attente."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT url, depth FROM intel WHERE status = 0 OR status >= 400
@@ -954,12 +1281,10 @@ class DatabaseManager:
             return cursor.fetchall()
     
     def get_high_risk_sites(self, min_score: int = 50, limit: int = 50) -> List[Dict]:
-        """Sites haut risque."""
         results, _ = self.search_fulltext('', {'min_risk': min_score}, limit)
         return results
     
     def get_successful_urls_for_recrawl(self, min_depth: int = 0) -> List[str]:
-        """URLs pour recrawl."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT url FROM intel WHERE status = 200 AND depth >= ?
@@ -967,10 +1292,7 @@ class DatabaseManager:
             """, (min_depth,))
             return [row[0] for row in cursor.fetchall()]
     
-    # ========== MAINTENANCE ==========
-    
     def purge_old_data(self, days: int = 30, anonymize: bool = False):
-        """Purge les donnees anciennes."""
         with self._get_connection() as conn:
             if anonymize:
                 conn.execute("""
@@ -985,6 +1307,5 @@ class DatabaseManager:
                 conn.execute("DELETE FROM entities WHERE last_seen < datetime('now', ?)", (f'-{days} days',))
     
     def vacuum(self):
-        """Optimise la base."""
         with self._get_connection() as conn:
             conn.execute("VACUUM")

@@ -173,7 +173,7 @@ class SentimentAnalyzer:
         words = re.findall(r'\b\w+\b', text.lower())
         
         positive_count = sum(1 for w in words if w in cls.POSITIVE_WORDS)
-        negative_count = sum(1 for w in words if w in cls NEGATIVE_WORDS)
+        negative_count = sum(1 for w in words if w in cls.NEGATIVE_WORDS)
         
         total = positive_count + negative_count
         if total == 0:

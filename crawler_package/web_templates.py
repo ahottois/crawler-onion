@@ -360,10 +360,14 @@ def render_trusted(data: Dict[str, Any], port: int, update_status: Dict[str, Any
 def render_updates(update_status: Dict[str, Any], daemon_status: Dict[str, Any], port: int) -> str:
     """Genere la page systeme (mises a jour + daemon)."""
     version = update_status.get('current_version', '6.4.0')
-    latest = update_status.get('latest_version', 'N/A')
+    latest_raw = update_status.get('latest_version')
+    # Afficher la version actuelle si pas de version distante
+    latest = latest_raw if latest_raw and latest_raw != 'None' and latest_raw != 'N/A' else version
     update_available = update_status.get('update_available', False)
+    commits_behind = update_status.get('commits_behind', 0)
     changelog = update_status.get('changelog', '')
     recent_commits = update_status.get('recent_commits', [])
+    error = update_status.get('error')
     
     # Daemon status
     daemon_installed = daemon_status.get('installed', False)
@@ -385,15 +389,23 @@ def render_updates(update_status: Dict[str, Any], daemon_status: Dict[str, Any],
     # Commits
     commits_html = ""
     for commit in recent_commits[:5]:
-        commits_html += f'<li><span class="commit-sha">{html.escape(commit.get("sha", ""))}</span> <span class="commit-date">{html.escape(commit.get("date", "")[:10])}</span><br>{html.escape(commit.get("message", ""))}</li>'
+        date_str = commit.get("date", "")
+        if date_str and len(date_str) >= 10:
+            date_str = date_str[:10]
+        commits_html += f'<li><span class="commit-sha">{html.escape(str(commit.get("sha", "")))}</span> <span class="commit-date">{html.escape(date_str)}</span><br>{html.escape(str(commit.get("message", "")))}</li>'
     if not commits_html:
-        commits_html = '<li style="color: #888;">Aucun commit</li>'
+        commits_html = '<li style="color: #888;">Utilisez "Verifier" pour charger les commits</li>'
     
-    # Update status card
-    if update_available:
-        update_status_html = f'<div class="stat-card alert"><h3>MISE A JOUR</h3><div class="value" style="font-size: 18px;">Disponible</div></div>'
+    # Update status card - gerer l'erreur
+    if error:
+        update_status_html = f'<div class="stat-card warning"><h3>STATUT</h3><div class="value" style="font-size: 12px;">Cliquez Verifier</div></div>'
+    elif update_available:
+        if commits_behind > 0:
+            update_status_html = f'<div class="stat-card alert"><h3>EN RETARD</h3><div class="value" style="font-size: 18px;">{commits_behind} commit(s)</div></div>'
+        else:
+            update_status_html = f'<div class="stat-card alert"><h3>MISE A JOUR</h3><div class="value" style="font-size: 18px;">Disponible</div></div>'
     else:
-        update_status_html = '<div class="stat-card info"><h3>MISE A JOUR</h3><div class="value" style="font-size: 18px;">A jour</div></div>'
+        update_status_html = '<div class="stat-card info"><h3>STATUT</h3><div class="value" style="font-size: 18px;">A jour</div></div>'
     
     # Daemon controls
     if daemon_installed:
@@ -411,7 +423,7 @@ def render_updates(update_status: Dict[str, Any], daemon_status: Dict[str, Any],
     
     <div class="stats-grid">
         <div class="stat-card"><h3>VERSION</h3><div class="value" style="font-size: 22px;">v{html.escape(version)}</div></div>
-        <div class="stat-card"><h3>DERNIERE</h3><div class="value" style="font-size: 22px;">v{html.escape(str(latest))}</div></div>
+        <div class="stat-card"><h3>DISTANTE</h3><div class="value" style="font-size: 22px;">v{html.escape(str(latest))}</div></div>
         {update_status_html}
         <div class="stat-card"><h3>SERVICE</h3><div class="value" style="font-size: 14px;">{daemon_badge}</div></div>
     </div>
@@ -447,22 +459,26 @@ def render_updates(update_status: Dict[str, Any], daemon_status: Dict[str, Any],
         {"<p style='margin-top: 10px; color: #888; font-size: 11px;'>Auto-start: " + ("Oui" if daemon_enabled else "Non") + "</p>" if daemon_installed else ""}
     </div>
     
-    {f'''
+    {f"""
     <div class="section">
         <div class="section-header"><span>Logs du Service</span><button class="btn btn-small btn-primary" onclick="refreshLogs()">Actualiser</button></div>
         <div class="section-content" style="max-height: none;">
             <div class="log-viewer" id="daemonLogs">{html.escape(daemon_logs) if daemon_logs else "Aucun log disponible"}</div>
         </div>
     </div>
-    ''' if daemon_installed else ""}
+    """ if daemon_installed else ""}
     
     <!-- Section Mises a jour -->
     <div class="control-panel">
-        <h2>Mises a Jour</h2>
+        <h2>Mises a Jour (via Git)</h2>
+        <div class="info-box">
+            <p>Le systeme de mise a jour utilise <code>git pull</code> pour recuperer les dernieres modifications.</p>
+            <p>Repository: <code>github.com/ahottois/crawler-onion</code></p>
+        </div>
         <div class="form-row">
             <div class="form-group">
-                <button id="checkUpdateBtn" class="btn btn-primary" onclick="checkUpdates()">Verifier</button>
-                <button id="updateBtn" class="btn btn-danger" onclick="performUpdate()" {"" if update_available else "disabled"}>Mettre a jour</button>
+                <button id="checkUpdateBtn" class="btn btn-primary" onclick="checkUpdates()">Verifier les mises a jour</button>
+                <button id="updateBtn" class="btn btn-danger" onclick="performUpdate()">Mettre a jour maintenant</button>
             </div>
         </div>
         <div id="updateStatus" style="margin-top: 10px; color: #888;"></div>

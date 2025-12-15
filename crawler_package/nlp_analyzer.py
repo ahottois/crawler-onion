@@ -101,20 +101,20 @@ class LanguageDetector:
         'en': ['the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i',
                'it', 'for', 'not', 'on', 'with', 'he', 'as', 'you', 'do', 'at',
                'this', 'but', 'his', 'by', 'from', 'they', 'we', 'say', 'her', 'she'],
-        'fr': ['le', 'de', 'un', 'être', 'et', 'à', 'il', 'avoir', 'ne', 'je',
+        'fr': ['le', 'de', 'un', 'etre', 'et', 'a', 'il', 'avoir', 'ne', 'je',
                'son', 'que', 'se', 'qui', 'ce', 'dans', 'en', 'du', 'elle', 'au',
                'pour', 'pas', 'sur', 'faire', 'plus', 'dire', 'me', 'on', 'mon', 'lui'],
         'de': ['der', 'die', 'und', 'in', 'den', 'von', 'zu', 'das', 'mit', 'sich',
-               'des', 'auf', 'für', 'ist', 'im', 'dem', 'nicht', 'ein', 'eine', 'als',
+               'des', 'auf', 'fur', 'ist', 'im', 'dem', 'nicht', 'ein', 'eine', 'als',
                'auch', 'es', 'an', 'er', 'hat', 'aus', 'bei', 'wir', 'nach', 'am'],
         'es': ['de', 'la', 'que', 'el', 'en', 'y', 'a', 'los', 'se', 'del',
                'las', 'un', 'por', 'con', 'no', 'una', 'su', 'para', 'es', 'al',
-               'lo', 'como', 'más', 'pero', 'sus', 'le', 'ya', 'o', 'este', 'si'],
-        'ru': ['?', '?', '??', '??', '?', '???', '??', '?', '???', '???',
-               '??', '??', '??', '???', '???', '??', '?', '?', '??', '??'],
-        'zh': ['?', '?', '?', '?', '?', '?', '?', '?', '?', '?'],
-        'pt': ['de', 'que', 'e', 'do', 'da', 'em', 'um', 'para', 'é', 'com',
-               'não', 'uma', 'os', 'no', 'se', 'na', 'por', 'mais', 'as', 'dos'],
+               'lo', 'como', 'mas', 'pero', 'sus', 'le', 'ya', 'o', 'este', 'si'],
+        'ru': ['i', 'v', 'ne', 'na', 'ya', 'chto', 'on', 's', 'kak', 'eto',
+               'ty', 'no', 'po', 'ona', 'dlya', 'my', 'k', 'u', 'to', 'za'],
+        'zh': ['de', 'shi', 'bu', 'le', 'zai', 'ren', 'you', 'wo', 'ta', 'zhe'],
+        'pt': ['de', 'que', 'e', 'do', 'da', 'em', 'um', 'para', 'e', 'com',
+               'nao', 'uma', 'os', 'no', 'se', 'na', 'por', 'mais', 'as', 'dos'],
     }
     
     @classmethod
@@ -173,7 +173,7 @@ class SentimentAnalyzer:
         words = re.findall(r'\b\w+\b', text.lower())
         
         positive_count = sum(1 for w in words if w in cls.POSITIVE_WORDS)
-        negative_count = sum(1 for w in words if w in cls.NEGATIVE_WORDS)
+        negative_count = sum(1 for w in words if w in cls NEGATIVE_WORDS)
         
         total = positive_count + negative_count
         if total == 0:

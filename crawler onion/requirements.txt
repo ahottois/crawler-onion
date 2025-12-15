@@ -1,0 +1,10 @@
+# Darknet Omniscient Crawler v6.4
+# Dépendances requises
+
+requests>=2.28.0
+beautifulsoup4>=4.11.0
+PySocks>=1.7.1
+urllib3>=1.26.0
+
+# Optionnel - pour les couleurs dans le terminal
+colorama>=0.4.6

@@ -28,7 +28,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 class OnionCrawler:
     """Crawler principal pour les sites .onion."""
     
-    VERSION = "6.4"
+    VERSION = "6.4.0"
     
     def __init__(self, config: Optional[Config] = None):
         self.config = config or Config()
@@ -247,7 +247,8 @@ class OnionCrawler:
             self.web_server = CrawlerWebServer(
                 self.config.db_file, 
                 self.config.web_port, 
-                self
+                self,
+                self.config  # Passer la config pour le systeme de mise a jour
             )
             self.web_server.start()
         

@@ -22,9 +22,11 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         body {{ font-family: 'Courier New', monospace; background: #0a0a0a; color: #00ff00; padding: 20px; min-height: 100vh; }}
         .container {{ max-width: 1600px; margin: 0 auto; }}
         h1 {{ color: #00ff00; text-align: center; margin-bottom: 30px; text-shadow: 0 0 10px #00ff00; }}
-        .nav-tabs {{ display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; }}
+        .nav-tabs {{ display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap; }}
         .nav-tab {{ padding: 10px 25px; background: #111; border: 1px solid #333; color: #888; cursor: pointer; border-radius: 5px; font-size: 14px; text-decoration: none; }}
         .nav-tab:hover, .nav-tab.active {{ background: #00ff00; color: #000; border-color: #00ff00; }}
+        .nav-tab.update-available {{ background: #ff4444; color: #fff; border-color: #ff4444; animation: pulse 2s infinite; }}
+        @keyframes pulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.7; }} }}
         .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 20px; }}
         .stat-card {{ background: #111; border: 1px solid #00ff00; padding: 15px; text-align: center; border-radius: 5px; }}
         .stat-card h3 {{ color: #888; font-size: 12px; margin-bottom: 8px; }}
@@ -44,6 +46,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .tag-crypto {{ background: #9933ff; color: #fff; }}
         .tag-social {{ background: #00aaff; color: #fff; }}
         .tag-email {{ background: #ffaa00; color: #000; }}
+        .tag-update {{ background: #ff4444; color: #fff; animation: pulse 2s infinite; }}
         .url {{ color: #00ff00; word-break: break-all; font-size: 12px; }}
         .domain {{ color: #888; }}
         .title {{ color: #fff; }}
@@ -62,8 +65,11 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .btn-primary {{ background: #00ff00; color: #000; }}
         .btn-primary:hover {{ background: #00cc00; }}
         .btn-warning {{ background: #ffaa00; color: #000; }}
+        .btn-danger {{ background: #ff4444; color: #fff; }}
+        .btn-danger:hover {{ background: #cc3333; }}
         .btn-small {{ padding: 4px 8px; font-size: 10px; }}
         .btn-copy {{ background: #333; color: #00ff00; border: 1px solid #00ff00; }}
+        .btn:disabled {{ opacity: 0.5; cursor: not-allowed; }}
         .message {{ padding: 8px; border-radius: 3px; margin-bottom: 10px; display: none; font-size: 12px; }}
         .message.success {{ background: #1a3a1a; border: 1px solid #00ff00; color: #00ff00; display: block; }}
         .message.error {{ background: #3a1a1a; border: 1px solid #ff4444; color: #ff4444; display: block; }}
@@ -78,18 +84,32 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .search-result-url {{ color: #888; font-size: 11px; word-break: break-all; }}
         .search-result-meta {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }}
         .refresh-info {{ text-align: center; color: #444; margin-bottom: 15px; font-size: 12px; }}
+        .update-banner {{ background: linear-gradient(90deg, #ff4444, #ff6666); color: #fff; padding: 10px 20px; border-radius: 5px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }}
+        .update-banner.hidden {{ display: none; }}
+        .version-badge {{ background: #00ff00; color: #000; padding: 2px 8px; border-radius: 3px; font-size: 11px; }}
+        .version-badge.new {{ background: #ff4444; color: #fff; }}
+        .changelog {{ background: #0a0a0a; border: 1px solid #333; border-radius: 5px; padding: 15px; margin-top: 15px; white-space: pre-wrap; font-size: 12px; color: #888; max-height: 200px; overflow-y: auto; }}
+        .commit-list {{ list-style: none; }}
+        .commit-list li {{ padding: 8px 0; border-bottom: 1px solid #222; }}
+        .commit-list li:last-child {{ border-bottom: none; }}
+        .commit-sha {{ color: #00aaff; font-family: monospace; }}
+        .commit-date {{ color: #666; font-size: 11px; }}
+        .loading {{ display: inline-block; width: 20px; height: 20px; border: 2px solid #333; border-top-color: #00ff00; border-radius: 50%; animation: spin 1s linear infinite; }}
+        @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Darknet Crawler v6.4</h1>
+        <h1>Darknet Crawler v{version}</h1>
         <div class="nav-tabs">
             <a href="/" class="nav-tab {nav_dashboard}">Dashboard</a>
             <a href="/search" class="nav-tab {nav_search}">Recherche</a>
             <a href="/trusted" class="nav-tab {nav_trusted}">Sites Fiables</a>
+            <a href="/updates" class="nav-tab {nav_updates}">Mises a jour</a>
         </div>
+        {update_banner}
         {page_content}
-        <div class="footer">Darknet Omniscient Crawler v6.4 | Port {port}</div>
+        <div class="footer">Darknet Omniscient Crawler v{version} | Port {port}</div>
     </div>
     <script>
         function copyToClipboard(text) {{
@@ -122,14 +142,82 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             .then(r => r.json())
             .then(data => showMessage(data.message, data.success ? 'success' : 'error'));
         }}
-        setTimeout(() => location.reload(), 30000);
+        function checkUpdates() {{
+            const btn = document.getElementById('checkUpdateBtn');
+            const status = document.getElementById('updateStatus');
+            if (btn) btn.disabled = true;
+            if (status) status.innerHTML = '<span class="loading"></span> Verification...';
+            
+            fetch('/api/check-updates', {{ method: 'POST' }})
+            .then(r => r.json())
+            .then(data => {{
+                if (btn) btn.disabled = false;
+                if (status) {{
+                    if (data.update_available) {{
+                        status.innerHTML = '<span style="color: #ff4444;">Mise a jour disponible: v' + data.latest_version + '</span>';
+                    }} else if (data.error) {{
+                        status.innerHTML = '<span style="color: #ff4444;">Erreur: ' + data.error + '</span>';
+                    }} else {{
+                        status.innerHTML = '<span style="color: #00ff00;">Vous etes a jour!</span>';
+                    }}
+                }}
+            }})
+            .catch(e => {{
+                if (btn) btn.disabled = false;
+                if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur de connexion</span>';
+            }});
+        }}
+        function performUpdate() {{
+            if (!confirm('Voulez-vous vraiment mettre a jour? Le crawler sera redemarrer.')) return;
+            
+            const btn = document.getElementById('updateBtn');
+            const status = document.getElementById('updateResult');
+            if (btn) btn.disabled = true;
+            if (status) status.innerHTML = '<span class="loading"></span> Mise a jour en cours...';
+            
+            fetch('/api/perform-update', {{ method: 'POST' }})
+            .then(r => r.json())
+            .then(data => {{
+                if (btn) btn.disabled = false;
+                if (status) {{
+                    if (data.success) {{
+                        status.innerHTML = '<span style="color: #00ff00;">' + data.message + '</span><br><pre style="color: #888; font-size: 11px;">' + (data.details || '') + '</pre><br><strong>Redemarrez le crawler pour appliquer les changements.</strong>';
+                    }} else {{
+                        status.innerHTML = '<span style="color: #ff4444;">' + data.message + '</span><br><pre style="color: #888; font-size: 11px;">' + (data.details || '') + '</pre>';
+                    }}
+                }}
+            }})
+            .catch(e => {{
+                if (btn) btn.disabled = false;
+                if (status) status.innerHTML = '<span style="color: #ff4444;">Erreur de connexion</span>';
+            }});
+        }}
+        if (window.location.pathname === '/') setTimeout(() => location.reload(), 30000);
     </script>
 </body>
 </html>'''
 
 
-def render_dashboard(data: Dict[str, Any], port: int) -> str:
+def _get_update_banner(update_status: Dict[str, Any]) -> str:
+    """Genere la banniere de mise a jour si disponible."""
+    if not update_status or not update_status.get('update_available'):
+        return ''
+    
+    latest = update_status.get('latest_version', '?')
+    return f'''
+    <div class="update-banner">
+        <span>Nouvelle version disponible: <strong>v{html.escape(str(latest))}</strong></span>
+        <a href="/updates" class="btn btn-primary">Voir les mises a jour</a>
+    </div>
+    '''
+
+
+def render_dashboard(data: Dict[str, Any], port: int, update_status: Dict[str, Any] = None) -> str:
     """Genere la page dashboard."""
+    version = update_status.get('current_version', '6.4.0') if update_status else '6.4.0'
+    update_banner = _get_update_banner(update_status)
+    nav_updates_class = 'update-available' if update_status and update_status.get('update_available') else ''
+    
     # Intel rows
     intel_rows_html = ""
     for row in data['intel_rows']:
@@ -183,13 +271,17 @@ def render_dashboard(data: Dict[str, Any], port: int) -> str:
     '''
     
     return HTML_TEMPLATE.format(
-        page_content=page_content, port=port,
-        nav_dashboard='active', nav_search='', nav_trusted=''
+        page_content=page_content, port=port, version=version,
+        update_banner=update_banner,
+        nav_dashboard='active', nav_search='', nav_trusted='', nav_updates=nav_updates_class
     )
 
 
-def render_search(results: List[Dict], query: str, filter_type: str, port: int) -> str:
+def render_search(results: List[Dict], query: str, filter_type: str, port: int, update_status: Dict[str, Any] = None) -> str:
     """Genere la page de recherche."""
+    version = update_status.get('current_version', '6.4.0') if update_status else '6.4.0'
+    nav_updates_class = 'update-available' if update_status and update_status.get('update_available') else ''
+    
     search_results_html = ""
     for r in results:
         tags = []
@@ -247,13 +339,17 @@ def render_search(results: List[Dict], query: str, filter_type: str, port: int) 
     '''
     
     return HTML_TEMPLATE.format(
-        page_content=page_content, port=port,
-        nav_dashboard='', nav_search='active', nav_trusted=''
+        page_content=page_content, port=port, version=version,
+        update_banner='',
+        nav_dashboard='', nav_search='active', nav_trusted='', nav_updates=nav_updates_class
     )
 
 
-def render_trusted(data: Dict[str, Any], port: int) -> str:
+def render_trusted(data: Dict[str, Any], port: int, update_status: Dict[str, Any] = None) -> str:
     """Genere la page des sites fiables."""
+    version = update_status.get('current_version', '6.4.0') if update_status else '6.4.0'
+    nav_updates_class = 'update-available' if update_status and update_status.get('update_available') else ''
+    
     trusted_html = ""
     for site in data['sites'][:12]:
         trust_class = f"trust-{site['trust_level']}"
@@ -303,6 +399,109 @@ def render_trusted(data: Dict[str, Any], port: int) -> str:
     '''
     
     return HTML_TEMPLATE.format(
-        page_content=page_content, port=port,
-        nav_dashboard='', nav_search='', nav_trusted='active'
+        page_content=page_content, port=port, version=version,
+        update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='active', nav_updates=nav_updates_class
+    )
+
+
+def render_updates(update_status: Dict[str, Any], port: int) -> str:
+    """Genere la page des mises a jour."""
+    version = update_status.get('current_version', '6.4.0')
+    latest = update_status.get('latest_version', 'N/A')
+    update_available = update_status.get('update_available', False)
+    changelog = update_status.get('changelog', '')
+    recent_commits = update_status.get('recent_commits', [])
+    error = update_status.get('error')
+    
+    # Commits recents
+    commits_html = ""
+    for commit in recent_commits:
+        commits_html += f'''
+        <li>
+            <span class="commit-sha">{html.escape(commit.get('sha', ''))}</span>
+            <span class="commit-date">{html.escape(commit.get('date', '')[:10])}</span>
+            <br>{html.escape(commit.get('message', ''))}
+        </li>'''
+    
+    if not commits_html:
+        commits_html = '<li style="color: #888;">Aucun commit disponible</li>'
+    
+    # Status
+    if error:
+        status_html = f'<div class="stat-card alert"><h3>ERREUR</h3><div class="value" style="font-size: 14px;">{html.escape(error)}</div></div>'
+    elif update_available:
+        status_html = f'''
+        <div class="stat-card alert">
+            <h3>MISE A JOUR DISPONIBLE</h3>
+            <div class="value">v{html.escape(str(latest))}</div>
+        </div>'''
+    else:
+        status_html = '''
+        <div class="stat-card info">
+            <h3>STATUT</h3>
+            <div class="value" style="font-size: 18px;">A jour</div>
+        </div>'''
+    
+    page_content = f'''
+    <div id="message" class="message"></div>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h3>VERSION ACTUELLE</h3>
+            <div class="value" style="font-size: 24px;">v{html.escape(version)}</div>
+        </div>
+        <div class="stat-card">
+            <h3>DERNIERE VERSION</h3>
+            <div class="value" style="font-size: 24px;">v{html.escape(str(latest))}</div>
+        </div>
+        {status_html}
+    </div>
+    
+    <div class="control-panel">
+        <h2>Gestion des Mises a Jour</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <button id="checkUpdateBtn" class="btn btn-primary" onclick="checkUpdates()">Verifier les mises a jour</button>
+                <button id="updateBtn" class="btn btn-danger" onclick="performUpdate()" {"" if update_available else "disabled"}>Mettre a jour maintenant</button>
+            </div>
+        </div>
+        <div id="updateStatus" style="margin-top: 10px; color: #888;"></div>
+        <div id="updateResult" style="margin-top: 10px;"></div>
+    </div>
+    
+    <div class="grid-2">
+        <div class="section">
+            <div class="section-header">Notes de version</div>
+            <div class="section-content" style="max-height: none;">
+                {f'<div class="changelog">{html.escape(changelog)}</div>' if changelog else '<p style="color: #888;">Aucune note de version disponible.</p>'}
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-header">Commits recents</div>
+            <div class="section-content" style="max-height: none;">
+                <ul class="commit-list">
+                    {commits_html}
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <div class="section-header">Instructions de mise a jour manuelle</div>
+        <div class="section-content" style="max-height: none;">
+            <p style="color: #888; margin-bottom: 10px;">Si la mise a jour automatique ne fonctionne pas, executez ces commandes:</p>
+            <div class="changelog">cd ~/crawler-onion
+git pull origin master
+pip install -r requirements.txt
+# Redemarrez le crawler</div>
+        </div>
+    </div>
+    '''
+    
+    return HTML_TEMPLATE.format(
+        page_content=page_content, port=port, version=version,
+        update_banner='',
+        nav_dashboard='', nav_search='', nav_trusted='', nav_updates='active'
     )

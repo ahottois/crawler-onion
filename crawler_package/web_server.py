@@ -14,18 +14,34 @@ from typing import Dict, List, Any, Optional
 from urllib.parse import urlparse, parse_qs
 
 from .logger import Log
+from .updater import Updater
 
 
 class CrawlerWebServer:
     """Serveur web leger pour visualiser les resultats du crawler."""
     
-    def __init__(self, db_file: str, port: int, crawler_ref=None):
+    def __init__(self, db_file: str, port: int, crawler_ref=None, config=None):
         self.db_file = db_file
         self.port = port
         self.crawler = crawler_ref
+        self.config = config
         self.server = None
         self.thread = None
         self._running = False
+        
+        # Initialiser l'updater si config disponible
+        if config:
+            self.updater = Updater(
+                repo_owner=config.repo_owner,
+                repo_name=config.repo_name,
+                current_version=config.version
+            )
+        else:
+            self.updater = Updater(
+                repo_owner="ahottois",
+                repo_name="crawler-onion",
+                current_version="6.4.0"
+            )
     
     def _get_data(self) -> Dict[str, Any]:
         """Recupere les donnees depuis la base."""
@@ -222,6 +238,14 @@ class CrawlerWebServer:
         except Exception as e:
             return {'success': False, 'message': f'Erreur: {str(e)}'}
     
+    def _get_update_status(self) -> Dict[str, Any]:
+        """Recupere le statut des mises a jour."""
+        return self.updater.get_update_status()
+    
+    def _perform_update(self) -> Dict[str, Any]:
+        """Execute la mise a jour."""
+        return self.updater.perform_update()
+    
     def _create_handler(self):
         """Cree le handler HTTP."""
         server_instance = self
@@ -242,8 +266,12 @@ class CrawlerWebServer:
                     self._send_html(server_instance._render_search(query, filter_type))
                 elif path == '/trusted':
                     self._send_html(server_instance._render_trusted())
+                elif path == '/updates':
+                    self._send_html(server_instance._render_updates())
                 elif path == '/api/stats':
                     self._send_json(server_instance._get_data())
+                elif path == '/api/update-status':
+                    self._send_json(server_instance._get_update_status())
                 else:
                     self.send_response(404)
                     self.end_headers()
@@ -258,6 +286,10 @@ class CrawlerWebServer:
                     result = server_instance._add_seeds(data.get('urls', []))
                 elif self.path == '/api/refresh-links':
                     result = server_instance._refresh_links()
+                elif self.path == '/api/perform-update':
+                    result = server_instance._perform_update()
+                elif self.path == '/api/check-updates':
+                    result = server_instance._get_update_status()
                 else:
                     self.send_response(404)
                     self.end_headers()
@@ -303,7 +335,8 @@ class CrawlerWebServer:
     def _render_dashboard(self) -> str:
         """Genere la page dashboard."""
         from .web_templates import render_dashboard
-        return render_dashboard(self._get_data(), self.port)
+        update_status = self._get_update_status()
+        return render_dashboard(self._get_data(), self.port, update_status)
     
     def _render_search(self, query: str = '', filter_type: str = 'all') -> str:
         """Genere la page de recherche."""
@@ -315,3 +348,8 @@ class CrawlerWebServer:
         """Genere la page des sites fiables."""
         from .web_templates import render_trusted
         return render_trusted(self._get_trusted_sites(), self.port)
+    
+    def _render_updates(self) -> str:
+        """Genere la page des mises a jour."""
+        from .web_templates import render_updates
+        return render_updates(self._get_update_status(), self.port)

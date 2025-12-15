@@ -11,8 +11,9 @@ from .tor import TorController
 from .utils import ClipboardHelper
 from .web_server import CrawlerWebServer
 from .crawler import OnionCrawler
+from .updater import Updater
 
-__version__ = "6.4"
+__version__ = "6.4.0"
 __all__ = [
     'Config',
     'Log', 'Logger', 'LogLevel',
@@ -21,5 +22,6 @@ __all__ = [
     'TorController',
     'ClipboardHelper',
     'CrawlerWebServer',
-    'OnionCrawler'
+    'OnionCrawler',
+    'Updater'
 ]

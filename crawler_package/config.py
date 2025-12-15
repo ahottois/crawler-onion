@@ -11,6 +11,11 @@ from typing import Dict, List
 class Config:
     """Configuration centralisee du crawler."""
     
+    # Version et infos du projet
+    version: str = "6.4.0"
+    repo_owner: str = "ahottois"
+    repo_name: str = "crawler-onion"
+    
     # Parametres de crawl
     max_workers: int = 15
     max_pages: int = 50000

@@ -10,6 +10,23 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 
+def _render_simple_chart(labels: List[str], values: List[int]) -> str:
+    """Genere un simple bar chart en HTML/CSS."""
+    if not values:
+        return '<p style="color:#888;">Pas de donnees</p>'
+    
+    max_val = max(values) if values else 1
+    bars = ""
+    for i, (label, val) in enumerate(zip(labels, values)):
+        height = int((val / max_val) * 100) if max_val > 0 else 0
+        bars += '<div style="display:inline-block;width:30px;margin:2px;text-align:center;">'
+        bars += '<div style="height:' + str(height) + 'px;background:#00ff00;min-height:2px;"></div>'
+        bars += '<div style="font-size:8px;color:#888;">' + str(label) + '</div>'
+        bars += '</div>'
+    
+    return '<div style="height:120px;display:flex;align-items:flex-end;">' + bars + '</div>'
+
+
 # Remplacer HTML_TEMPLATE
 HTML_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
@@ -495,7 +512,7 @@ def render_intel_list(data: Dict, filters: Dict, port: int) -> str:
         if item.get('socials'):
             tags.append('<span class="tag tag-social">SOCIAL</span>')
         
-        risk_class = 'risk-high' if item.get('risk_score', 0) >= 70 else ('risk-medium' if item.get('risk_score', 0) >= 40 else '')
+        risk_class = 'risk-high' if item.get('risk_score', 0) >= 70 else ('risk-medium' if item.get('risk_score', 0) >= 40 : '')
         important_icon = '&#9733;' if item.get('marked_important') else '';
         
         rows_html += '<tr class="intel-row" onclick="showDetail(\'' + html.escape(item.get('url', '')) + '\')">'
@@ -824,7 +841,7 @@ def render_domains_list(domains: List[Dict], status_filter: str, port: int) -> s
         <div class="section-header">Domaines (''' + str(len(domains)) + ''')</div>
         <div class="section-content" style="max-height: 600px;">
             <table>
-                <thead><tr><th>Domaine</th><th>Pages</th><th>OK</th><th>Intel</th><th>Trust</th><th>Boost</th></tr></thead>
+                <thead><tr><th>Domaine</th><th>Pages</th><th>Succes</th><th>Intel</th><th>Trust</th><th>Boost</th></tr></thead>
                 <tbody>''' + rows_html + '''</tbody>
             </table>
         </div>
@@ -965,8 +982,8 @@ def render_monitoring(data: Dict, workers: Dict, port: int) -> str:
     # Timeline chart
     timeline = data.get('timeline', [])
     timeline_html = _render_simple_chart(
-        [t['date'][-5:] for t in reversed(timeline)],
-        [t['success'] for t in reversed(timeline)]
+        [t['date'][-5:] for t in reversed(timeline)] if timeline else [],
+        [t['success'] for t in reversed(timeline)] if timeline else []
     )
     
     # Hourly stats
@@ -1028,24 +1045,23 @@ def render_monitoring(data: Dict, workers: Dict, port: int) -> str:
         
         <div class="section">
             <div class="section-header">Stats Horaires</div>
-                <div class="section-content">
-                    <table>
-                        <thead><tr><th>Heure</th><th>Crawl</th><th>OK</th><th>Err</th><th>Intel</th></tr></thead>
-                        <tbody>''' + (hourly_html or '<tr><td colspan="5">Pas de donnees</td></tr>') + '''</tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-        
-        <div class="section">
-            <div class="section-header">Erreurs par Code HTTP</div>
             <div class="section-content">
-                <p style="color:#888; margin-bottom:10px;">Total erreurs: ''' + str(errors.get('total_errors', 0)) + ''' (serveur: ''' + str(errors.get('server_errors', 0)) + ''', client: ''' + str(errors.get('client_errors', 0)) + ''')</p>
                 <table>
-                    <thead><tr><th>Code</th><th>Count</th></tr></thead>
-                    <tbody>''' + (errors_html or '<tr><td colspan="2">Aucune erreur</td></tr>') + '''</tbody>
+                    <thead><tr><th>Heure</th><th>Crawl</th><th>OK</th><th>Err</th><th>Intel</th></tr></thead>
+                    <tbody>''' + (hourly_html or '<tr><td colspan="5">Pas de donnees</td></tr>') + '''</tbody>
                 </table>
             </div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <div class="section-header">Erreurs par Code HTTP</div>
+        <div class="section-content">
+            <p style="color:#888; margin-bottom:10px;">Total erreurs: ''' + str(errors.get('total_errors', 0)) + ''' (serveur: ''' + str(errors.get('server_errors', 0)) + ''', client: ''' + str(errors.get('client_errors', 0)) + ''')</p>
+            <table>
+                <thead><tr><th>Code</th><th>Count</th></tr></thead>
+                <tbody>''' + (errors_html or '<tr><td colspan="2">Aucune erreur</td></tr>') + '''</tbody>
+            </table>
         </div>
     </div>
     
@@ -1266,7 +1282,7 @@ def render_security(security_status: Dict, audit_data: Dict, port: int) -> str:
             <div class="section-content">
                 <div class="form-row" style="margin-bottom:10px;">
                     <input type="text" id="newIP" placeholder="IP a ajouter" style="flex:2;">
-                    <button class="btn btn-primary" onclick="addIP()">Ajouter</button>
+                    <button class="btn btn-danger" onclick="addIP()">Ajouter</button>
                 </div>
                 <table>
                     <thead><tr><th>IP</th><th>Action</th></tr></thead>
@@ -1363,8 +1379,7 @@ def render_graph(graph_data: Dict, port: int) -> str:
     <div class="stats-grid">
         <div class="stat-card"><h3>NOEUDS</h3><div class="value">''' + str(stats.get('total_nodes', 0)) + '''</div></div>
         <div class="stat-card"><h3>LIENS</h3><div class="value">''' + str(stats.get('total_edges', 0)) + '''</div></div>
-        <div class="stat-card info"><h3>EMAILS</h3><div class="value">''' + str(len([n for n in nodes if n.get('entity_type') == 'email'])) + '''</div></div>
-        <div class="stat-card warning"><h3>CRYPTO</h3><div class="value">''' + str(len([n for n in nodes if 'crypto' in n.get('entity_type', '')])) + '''</div></div>
+        <div class="stat-card"><h3>SCORE MOYEN</h3><div class="value">''' + str(round(avg_score, 2)) + '''</div></div>
     </div>
     
     <div class="section">
@@ -1505,7 +1520,7 @@ def render_alerts(alerts: List[Dict], port: int) -> str:
         alerts_html += '</tr>'
     
     if not alerts_html:
-        alerts_html = '<tr><td colspan="4" style="color:#888;">Aucune alerte</td></tr>'
+        alerts_html = '<tr><td colspan="4" style="color: #888;">Aucune alerte</td></tr>'
     
     page_content = '''
     <div class="section">

@@ -733,7 +733,7 @@ class CrawlerWebServer:
                     self._send_json(server_instance._get_intel_item(url) or {})
                 elif path == '/api/queue':
                     sort = params.get('sort', ['priority'])[0]
-                    self._send_json({'queue': server_instance._get_queue(sort)})
+                    this._send_json({'queue': server_instance._get_queue(sort)})
                 elif path == '/api/domains':
                     status = params.get('status', [None])[0]
                     self._send_json({'domains': server_instance._get_domains(status)})
@@ -940,4 +940,131 @@ class CrawlerWebServer:
             try:
                 s.bind(('0.0.0.0', self.port))
                 return False
-            except OSE
+            except OSError:
+                return True
+    
+    def _kill_port_process(self) -> bool:
+        """Tue le processus utilisant le port."""
+        import subprocess
+        try:
+            # Linux: lsof + kill
+            result = subprocess.run(
+                ['lsof', '-t', '-i', f':{self.port}'],
+                capture_output=True, text=True, timeout=5
+            )
+            pids = result.stdout.strip().split('\n')
+            killed = False
+            for pid in pids:
+                if pid:
+                    try:
+                        subprocess.run(['kill', '-9', pid], timeout=5)
+                        killed = True
+                    except:
+                        pass
+            return killed
+        except FileNotFoundError:
+            # Windows ou lsof non disponible
+            try:
+                import os
+                os.system(f'fuser -k {self.port}/tcp 2>/dev/null')
+                return True
+            except:
+                return False
+        except Exception as e:
+            Log.error(f"Erreur kill port: {e}")
+            return False
+    
+    def stop(self):
+        """Arrete le serveur."""
+        if self.server and self._running:
+            self.server.shutdown()
+            self._running = False
+            Log.info("Serveur web arrete")
+    
+    # ========== RENDER PAGES ==========
+    
+    def _render_login(self) -> str:
+        from .web_templates import render_login
+        return render_login(self.port)
+    
+    def _render_dashboard(self) -> str:
+        from .web_templates import render_dashboard
+        return render_dashboard(self._get_data(), self.port, self._get_update_status())
+    
+    def _render_search_page(self, params: Dict) -> str:
+        from .web_templates import render_search
+        query = params.get('q', [''])[0]
+        filter_type = params.get('filter', ['all'])[0]
+        results = self._search(query, {'intel_type': filter_type if filter_type != 'all' else None})
+        return render_search(results.get('results', []), query, filter_type, self.port)
+    
+    def _render_intel_page(self, params: Dict) -> str:
+        from .web_templates import render_intel_list
+        page = int(params.get('page', ['1'])[0])
+        filters = {
+            'time_range': params.get('time', [None])[0],
+            'intel_type': params.get('type', [None])[0],
+            'min_risk': int(params.get('risk', ['0'])[0]) or None
+        }
+        results = self._search('', filters, page, 50)
+        return render_intel_list(results, filters, self.port)
+    
+    def _render_intel_detail(self, url: str) -> str:
+        from .web_templates import render_intel_detail
+        item = self._get_intel_item(url)
+        return render_intel_detail(item, self.port)
+    
+    def _render_queue_page(self, params: Dict) -> str:
+        from .web_templates import render_queue
+        sort = params.get('sort', ['priority'])[0]
+        queue = self._get_queue(sort)
+        return render_queue(queue, sort, self.port)
+    
+    def _render_domains_page(self, params: Dict) -> str:
+        from .web_templates import render_domains_list
+        status = params.get('status', [None])[0]
+        domains = self._get_domains(status)
+        return render_domains_list(domains, status or '', self.port)
+    
+    def _render_domain_detail(self, domain: str) -> str:
+        from .web_templates import render_domain_detail
+        profile = self._get_domain_profile(domain)
+        return render_domain_detail(profile, self.port)
+    
+    def _render_monitoring_page(self) -> str:
+        from .web_templates import render_monitoring
+        data = self._get_monitoring()
+        workers = self._get_workers_status()
+        return render_monitoring(data, workers, self.port)
+    
+    def _render_entities_page(self, params: Dict) -> str:
+        from .web_templates import render_entities
+        etype = params.get('type', [None])[0]
+        data = self._get_entities(etype)
+        return render_entities(data, etype or '', self.port)
+    
+    def _render_trusted(self) -> str:
+        from .web_templates import render_trusted
+        return render_trusted(self._get_trusted_sites(), self.port)
+    
+    def _render_alerts(self) -> str:
+        from .web_templates import render_alerts
+        return render_alerts(self._get_alerts(), self.port)
+    
+    def _render_export(self) -> str:
+        from .web_templates import render_export
+        db = self._get_db()
+        stats = db.get_stats()
+        return render_export(stats, self.port)
+    
+    def _render_settings(self) -> str:
+        from .web_templates import render_settings
+        return render_settings(self._get_domain_lists(), self.port)
+    
+    def _render_security(self) -> str:
+        from .web_templates import render_security
+        return render_security(self._get_security_status(), self._get_audit_logs(50), self.port)
+    
+    def _render_updates(self) -> str:
+        from .web_templates import render_updates
+        return render_updates(self._get_update_status(), self._get_daemon_status(), self.port)

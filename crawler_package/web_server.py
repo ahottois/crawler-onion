@@ -102,23 +102,23 @@ class CrawlerWebServer:
             cursor = conn.execute("SELECT COUNT(*) FROM intel WHERE status = 0")
             data['queue_size'] = cursor.fetchone()[0]
             
+            # Utiliser found_at au lieu de last_crawl (compatibilite)
             cursor = conn.execute("""
-                SELECT url, title, status, risk_score, domain FROM intel 
-                ORDER BY last_crawl DESC LIMIT 15
+                SELECT url, title, status, domain FROM intel 
+                ORDER BY found_at DESC LIMIT 15
             """)
             data['recent_rows'] = [dict(row) for row in cursor.fetchall()]
             
             cursor = conn.execute("""
-                SELECT domain, title, secrets_found, cryptos, socials, emails, risk_score
+                SELECT domain, title, secrets_found, cryptos, socials, emails
                 FROM intel WHERE status = 200 AND (secrets_found != '{}' OR cryptos != '{}')
-                ORDER BY risk_score DESC LIMIT 10
+                ORDER BY found_at DESC LIMIT 10
             """)
             data['intel_rows'] = [dict(row) for row in cursor.fetchall()]
             
             cursor = conn.execute("""
                 SELECT domain, COUNT(*) as pages, 
-                       SUM(CASE WHEN status = 200 THEN 1 ELSE 0 END) as success,
-                       AVG(risk_score) as risk
+                       SUM(CASE WHEN status = 200 THEN 1 ELSE 0 END) as success
                 FROM intel GROUP BY domain ORDER BY pages DESC LIMIT 10
             """)
             data['domain_rows'] = [dict(row) for row in cursor.fetchall()]

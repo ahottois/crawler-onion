@@ -356,7 +356,7 @@ def render_updates(update_status: Dict[str, Any], daemon_status: Dict[str, Any],
         if commits_behind > 0:
             update_status_html = '<div class="stat-card alert"><h3>EN RETARD</h3><div class="value" style="font-size: 18px;">' + str(commits_behind) + ' commit(s)</div></div>'
         else:
-            update_status_html = '<div class="stat-card alert"><h3>MISE A JOUR</h3><div class="value" style="font-size: 18px;">Disponible</div></div>'
+            update_status_html = '<div class="stat-card alert"><h3>MISE A JOUR</h3><div class="value" style="font-size: 18px;"> Disponible</div></div>'
     else:
         update_status_html = '<div class="stat-card info"><h3>STATUT</h3><div class="value" style="font-size: 18px;">A jour</div></div>'
     
@@ -512,7 +512,7 @@ def render_intel_list(data: Dict, filters: Dict, port: int) -> str:
         if item.get('socials'):
             tags.append('<span class="tag tag-social">SOCIAL</span>')
         
-        risk_class = 'risk-high' if item.get('risk_score', 0) >= 70 else ('risk-medium' if item.get('risk_score', 0) >= 40 : '')
+        risk_class = 'risk-high' if item.get('risk_score', 0) >= 70 else ('risk-medium' if item.get('risk_score', 0) >= 40 else '')
         important_icon = '&#9733;' if item.get('marked_important') else '';
         
         rows_html += '<tr class="intel-row" onclick="showDetail(\'' + html.escape(item.get('url', '')) + '\')">'
@@ -1362,7 +1362,7 @@ def render_graph(graph_data: Dict, port: int) -> str:
         nodes_js.append({
             'id': n['id'],
             'label': n['value'][:20] + ('...' if len(n['value']) > 20 else ''),
-            'title': f"{n['entity_type']}: {n['value']}\nOccurrences: {n.get('occurrence_count', 1)}",
+            'title': n['entity_type'] + ': ' + n['value'] + '\nOccurrences: ' + str(n.get('occurrence_count', 1)),
             'color': color,
             'size': min(10 + n.get('occurrence_count', 1) * 2, 40)
         })
@@ -1379,7 +1379,8 @@ def render_graph(graph_data: Dict, port: int) -> str:
     <div class="stats-grid">
         <div class="stat-card"><h3>NOEUDS</h3><div class="value">''' + str(stats.get('total_nodes', 0)) + '''</div></div>
         <div class="stat-card"><h3>LIENS</h3><div class="value">''' + str(stats.get('total_edges', 0)) + '''</div></div>
-        <div class="stat-card"><h3>SCORE MOYEN</h3><div class="value">''' + str(round(avg_score, 2)) + '''</div></div>
+        <div class="stat-card info"><h3>EMAILS</h3><div class="value">''' + str(len([n for n in nodes if n.get('entity_type') == 'email'])) + '''</div></div>
+        <div class="stat-card warning"><h3>CRYPTO</h3><div class="value">''' + str(len([n for n in nodes if 'crypto' in n.get('entity_type', '')])) + '''</div></div>
     </div>
     
     <div class="section">
@@ -1390,11 +1391,11 @@ def render_graph(graph_data: Dict, port: int) -> str:
     </div>
     
     <div class="legend" style="margin-top:10px;">
-        <span style="color:#ff6b6b;">? Email</span>
-        <span style="color:#feca57;">? Crypto</span>
-        <span style="color:#48dbfb;">? Social</span>
-        <span style="color:#ff9ff3;">? Username</span>
-        <span style="color:#1dd1a1;">? Phone</span>
+        <span style="color:#ff6b6b;">Email</span>
+        <span style="color:#feca57;">Crypto</span>
+        <span style="color:#48dbfb;">Social</span>
+        <span style="color:#ff9ff3;">Username</span>
+        <span style="color:#1dd1a1;">Phone</span>
     </div>
     
     <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
@@ -1539,11 +1540,15 @@ def render_alerts(alerts: List[Dict], port: int) -> str:
     
     <script>
     function markAllRead() {
-        fetch("/api/mark-alerts-read", {method: "POST"}).then(function() { location.reload(); });
+        fetch("/api/mark-alerts-read", {
+            method: "POST"
+        }).then(function() { location.reload(); });
     }
     function clearAlerts() {
         if (confirm("Supprimer toutes les alertes?")) {
-            fetch("/api/clear-alerts", {method: "POST"}).then(function() { location.reload(); });
+            fetch("/api/clear-alerts", {
+                method: "POST"
+            }).then(function() { location.reload(); });
         }
     }
     </script>'''
